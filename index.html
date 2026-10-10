@@ -30,6 +30,13 @@ button{font:inherit;border:1px solid var(--borda);background:#fff;border-radius:
 .fp-alvo{outline:3px solid #f59e0b!important;outline-offset:1px;background:rgba(255,200,60,.35)!important;animation:alvo 1.2s ease-in-out 2}
 @keyframes alvo{50%{outline-color:#fde68a}}
 @media (orientation:landscape) and (max-height:500px){ header{padding-top:calc(env(safe-area-inset-top) + 4px);padding-bottom:4px}header button{padding:3px 10px}.barra-baixo{padding:5px 8px calc(env(safe-area-inset-bottom) + 5px)}.barra-baixo button{padding:7px 8px;font-size:14px}#fo-nif-info{display:none} }
+/* orientação escolhida: horizontal com o telemóvel na vertical → a ficha roda 90° e ocupa o ecrã */
+body.sem-scroll{overflow:hidden}
+.ficha-wrap.rodado{position:fixed;top:0;left:100vw;width:100vh;width:100dvh;height:100vw;transform:rotate(90deg);transform-origin:top left;display:flex;flex-direction:column;background:#f2f4ef;z-index:30;overflow:hidden}
+.ficha-wrap.rodado header{position:static;padding:4px 10px}.ficha-wrap.rodado header button{padding:3px 10px}
+.ficha-wrap.rodado .fp-zona{flex:1;overflow:auto}.ficha-wrap.rodado #fo-nif-info{display:none}
+.ficha-wrap.rodado .barra-baixo{position:static;padding:5px 8px}.ficha-wrap.rodado .barra-baixo button{padding:7px 8px;font-size:14px}
+header .zoom button{font-size:14px}
 </style></head><body><div id="app"></div><div id="toast"></div>
 <script>!function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"function"==typeof define&&define.amd?define(["exports"],e):e((t=t||self).PDFLib={})}(this,(function(t){"use strict";
 /*! *****************************************************************************
@@ -433,22 +440,24 @@ function novaFicha(){ const h=hojeISO(), ant=fichas().find(f=>f.dados.data===h),
   UI.fof={id:uid(),dados:D,nova:true}; inicio(); if(msg) toast(msg+". Confirme.",3500); }
 
 function ecraFicha(){ const E=UI.fof, D=E.dados, pode=D.estado!=="concluida";
-  $app.innerHTML=`<header class="ficha"><button id="f-voltar">◂</button><b>FOF</b><span class="tag ${D.estado==="concluida"?(E.enviada?"ok":"aviso"):""}">${D.estado==="concluida"?(E.enviada?"Enviada":"Concluída"):"Rascunho"}</span>
-      <span class="zoom"><button id="fp-zm">−</button><button id="fp-zp">＋</button></span></header>
-    <div id="rodar" class="rodar">↻ Rode o telemóvel para a horizontal</div>
+  $app.innerHTML=`<div id="ficha-wrap" class="ficha-wrap"><header class="ficha"><button id="f-voltar">◂</button><b>FOF</b><span class="tag ${D.estado==="concluida"?(E.enviada?"ok":"aviso"):""}">${D.estado==="concluida"?(E.enviada?"Enviada":"Concluída"):"Rascunho"}</span>
+      <span class="zoom"><button id="f-orient" title="Escolher a orientação">⟲ <span id="f-orient-t"></span></button><button id="fp-zm">−</button><button id="fp-zp">＋</button></span></header>
     <datalist id="fo-distritos">${FO_DISTRITOS.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
     <div id="fo-nif-info" class="nota" style="padding:4px 10px;min-height:16px"></div>
     ${papelFOFHTML(D,pode)}
     <div id="fo-erro" class="erro"></div>
     <div class="barra-baixo">${pode?`<button id="f-gravar">Gravar</button><button id="f-ver">👁 PDF</button><button class="seg" id="f-seg">Seguinte ▸</button><button class="prim" id="f-concluir">Concluir</button>`
-      :`<button id="f-ver">👁 PDF</button><button class="prim" id="f-enviar">📤 Enviar</button><button id="f-reabrir">Reabrir</button>`}</div>`;
+      :`<button id="f-ver">👁 PDF</button><button class="prim" id="f-enviar">📤 Enviar</button><button id="f-reabrir">Reabrir</button>`}</div></div>`;
   const pag=document.getElementById("fp-pag"); const zoom=z=>{ UI.fpZoom=Math.max(1,Math.min(3.2,Math.round(z*10)/10)); pag.style.width=(UI.fpZoom*100)+"%"; ajustar(); };
-  const ajustar=()=>{ const w=pag.getBoundingClientRect().width||900; pag.style.setProperty("--k",(w/595.28).toFixed(4));
-    const vert=window.innerHeight>window.innerWidth && window.innerWidth<900; const r=document.getElementById("rodar"); if(r) r.style.display=vert?"block":"none"; };
-  // horizontal: a ficha ocupa a largura do ecrã (no telemóvel instalado, a app fixa-se na horizontal)
-  try{ if(screen.orientation&&screen.orientation.lock) screen.orientation.lock("landscape").catch(()=>{}); }catch(e){}
-  if(!UI.fpZoomEscolhido) UI.fpZoom=1;
-  zoom(UI.fpZoom); window.onresize=ajustar; window.onorientationchange=()=>setTimeout(ajustar,300);
+  // orientação à escolha: "Vertical" ou "Horizontal" (com o telemóvel na vertical, a ficha roda 90° e fica a ocupar o ecrã deitado)
+  const wrap=document.getElementById("ficha-wrap");
+  const aplicarOrient=()=>{ const h=(ler("fofm-orient","v")==="h"), deitado=window.innerWidth>window.innerHeight;
+    wrap.classList.toggle("rodado",h&&!deitado); document.body.classList.toggle("sem-scroll",h&&!deitado);
+    const t=document.getElementById("f-orient-t"); if(t) t.textContent=h?"Horizontal":"Vertical"; };
+  const ajustar=()=>{ aplicarOrient(); const w=pag.offsetWidth||900; pag.style.setProperty("--k",(w/595.28).toFixed(4)); };
+  document.getElementById("f-orient").onclick=()=>{ gravarLS("fofm-orient",ler("fofm-orient","v")==="h"?"v":"h"); UI.fpZoom=1; zoom(1); toast(ler("fofm-orient","v")==="h"?"Horizontal: segure o telemóvel deitado.":"Vertical."); };
+  if(!UI.fpZoomEscolhido) UI.fpZoom=1;   // a ficha começa ajustada à largura do ecrã
+  zoom(UI.fpZoom); window.onresize=ajustar; window.onorientationchange=()=>setTimeout(ajustar,300); setTimeout(ajustar,60);
   document.getElementById("fp-zm").onclick=()=>{ UI.fpZoomEscolhido=true; zoom(UI.fpZoom-.3); }; document.getElementById("fp-zp").onclick=()=>{ UI.fpZoomEscolhido=true; zoom(UI.fpZoom+.3); };
   const guardar=()=>{ if(pode) lerPapelFOF(); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); marcarSeguinte(); };
   // campos essenciais (os obrigatórios da ficha, pela ordem do papel; infrações se CR/CO): o "Seguinte" vai ao primeiro em falta
@@ -492,7 +501,7 @@ function ecraFicha(){ const E=UI.fof, D=E.dados, pode=D.estado!=="concluida";
     document.getElementById("f-reabrir").onclick=()=>{ if(!confirm("Reabrir para alterar? Terá de a enviar de novo.")) return; D.estado="rascunho"; E.enviada=false; guardarFicha({id:E.id,dados:D,enviada:false}); ecraFicha(); };
   }
   document.getElementById("f-ver").onclick=async()=>{ if(pode) lerPapelFOF(); try{ const b=await gerarPdfFOF(D); abrirBlob(new Blob([b],{type:"application/pdf"})); }catch(e){ alert("Não foi possível gerar o PDF: "+e.message); } };
-  document.getElementById("f-voltar").onclick=()=>{ if(pode) guardar(); try{ screen.orientation&&screen.orientation.unlock&&screen.orientation.unlock(); }catch(e){} UI.fof=null; inicio(); };
+  document.getElementById("f-voltar").onclick=()=>{ if(pode) guardar(); document.body.classList.remove("sem-scroll"); UI.fof=null; inicio(); };
 }
 function abrirBlob(b){ const u=URL.createObjectURL(b); const w=window.open(u,"_blank"); if(!w){ const a=document.createElement("a"); a.href=u; a.download="FOF.pdf"; a.click(); } setTimeout(()=>URL.revokeObjectURL(u),120000); }
 // envio automático para a caixa de receção da UO (cifrada com a chave pública da UO; o servidor não a consegue ler)
