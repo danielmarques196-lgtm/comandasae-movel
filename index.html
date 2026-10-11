@@ -724,6 +724,21 @@ function ecraFicha(){ const E=UI.fof, D=E.dados, pode=D.estado!=="concluida";
 }
 /* ---------- Formulário passo a passo (campos obrigatórios, pela ordem da ficha); a ficha pode ser vista e editada a qualquer momento ---------- */
 const OE_OP=["Prod. 1.ª","Indústria","Grossista","Armazenista","Embalador","Transportador","Imp./Dist","Restauração e Bebidas","Retalhista","P. Serv."];
+// morada a partir da localização GPS (serviço público Photon/OpenStreetMap); só preenche campos vazios e só depois de confirmar
+async function moradaPorGPS(g){ const k="fofm-geo-"+g.lat.toFixed(4)+","+g.lon.toFixed(4); const c=ler(k,null); if(c) return c; if(!navigator.onLine) return null;
+  const r=await fetch("https://photon.komoot.io/reverse?lat="+g.lat+"&lon="+g.lon+"&lang=default",{cache:"no-store"}); if(!r.ok) return null; const f=((await r.json()).features||[])[0]; if(!f) return null;
+  const x=f.properties||{}, dist=[x.state,x.county].find(v=>FO_DISTRITOS.includes(v))||"", cp=String(x.postcode||"").replace(/\D/g,"");
+  const o={moradaEst:[x.street||x.name||"",x.housenumber||""].filter(Boolean).join(" ").trim(),cpEst:cp.length===7?cp.slice(0,4)+"-"+cp.slice(4):"",distritoEst:dist,
+    concelhoEst:(x.county&&x.county!==dist?x.county:x.city)||"",freguesiaEst:x.district||x.locality||""};
+  if(!Object.values(o).some(Boolean)) return null; gravarLS(k,o); return o; }
+function sugerirMorada(E,D){ const box=document.getElementById("w-geo"); if(!box) return; const K=["moradaEst","cpEst","distritoEst","concelhoEst","freguesiaEst"];
+  if(K.every(k=>D[k])) return; box.innerHTML=`<p class="nota">📍 A procurar a morada pela localização…</p>`;
+  moradaPorGPS(D.gps).then(o=>{ if(!document.getElementById("w-geo")) return; const novos=o?K.filter(k=>o[k]&&!D[k]):[]; if(!novos.length){ box.innerHTML=""; return; }
+    const NOM={moradaEst:"Morada",cpEst:"Código postal",distritoEst:"Distrito",concelhoEst:"Concelho",freguesiaEst:"Freguesia"};
+    box.innerHTML=`<div class="aviso-box"><b>📍 Morada pela localização</b> (confirme antes de usar)<br>${novos.map(k=>`${NOM[k]}: <b>${esc(o[k])}</b>`).join("<br>")}
+      <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="prim" id="w-geo-sim">Usar</button><button type="button" id="w-geo-nao">Não usar</button></div></div>`;
+    document.getElementById("w-geo-sim").onclick=()=>{ for(const k of novos) D[k]=o[k]; guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); };
+    document.getElementById("w-geo-nao").onclick=()=>{ E.geoNao=true; box.innerHTML=""; }; }).catch(()=>{ box.innerHTML=""; }); }
 // inspetores para escolher na brigada (publicados com o planeamento; sem lista, os que aparecem no planeamento)
 function listaInspPlan(){ const m=new Map(); for(const i of (PLANO&&PLANO.ins)||[]) if(i&&i.c) m.set(String(i.c),String(i.n||""));
   if(!m.size) for(const x of (PLANO&&PLANO.r)||[]) for(const i of x.i||[]) if(i&&i.c) m.set(String(i.c),String(i.n||""));
@@ -751,7 +766,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
     if(c.t==="gps"){ if(D.modalidade==="E-commerce") return `<div class="w-campo"><label>${esc(c.l)}</label><p class="nota">Não se aplica (e-commerce).</p></div>`;
       return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-gps">${D.gps?`📍 ${D.gps.lat}, ${D.gps.lon} <span class="nota">(±${D.gps.prec} m)</span>`:`<span class="nota">Sem localização.</span>`} <button type="button" id="w-gps">📍 ${D.gps?"Atualizar":"Obter"}</button></div></div>`; }
     if(c.t==="fotos"){ const F=D.fotos||[]; return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-fotos">${F.map(x=>`<div class="w-foto" data-n="${x.n}"><img alt=""><button type="button" data-rmf="${x.n}">✕</button></div>`).join("")}</div>
-      ${F.length<MAX_FOTOS?`<div class="w-addf"><label class="w-addfoto">📷 Tirar fotografia<input class="w-foto-in" type="file" accept="image/*" capture="environment" hidden></label><label class="w-addfoto">🖼 Escolher da galeria<input class="w-foto-in" type="file" accept="image/*" multiple hidden></label></div>`:""}<p class="nota">${F.length} de ${MAX_FOTOS} · seguem com a FOF num PDF "Reportagem fotográfica".</p></div>`; }
+      ${F.length<MAX_FOTOS?`<div class="w-addf"><label class="w-addfoto">📷 Adicionar fotografias<input class="w-foto-in" type="file" accept="image/*" multiple style="display:none"></label></div>`:""}<p class="nota">${F.length} de ${MAX_FOTOS} · o telemóvel pergunta se quer tirar a fotografia ou escolher da galeria. Seguem com a FOF num PDF "Reportagem fotográfica".</p></div>`; }
     if(c.t==="brig"){ let b=(Array.isArray(v)?v:[]).filter(Boolean).map(String); if(!b.length&&cfg.cartao) b=[String(cfg.cartao)]; const L=listaInspPlan(), nomeDe=x=>(L.find(i=>i.c===x)||{}).n||"";
       // escolhe-se pelo nome; na FOF ficam os n.º de cartão
       return `<div class="w-campo"><label>${esc(c.l)}</label><p class="nota">Toque nos colegas que estão consigo (até 5 na brigada). Na FOF ficam os n.º de cartão.</p>
@@ -766,7 +781,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
     <datalist id="fo-distritos">${FO_DISTRITOS.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
     <div class="w-passos">${vis.map(p=>{ const f=(p.campos||[]).some(c=>faltaK.has(c.k)); return `<button data-p="${PASSOS.indexOf(p)}" class="${p===P?"atual":""} ${p.id!=="fim"&&!f?"feito":""}" title="${esc(p.t)}">${p.id==="fim"?"✓":PASSOS.indexOf(p)+1}</button>`; }).join("")}</div>
     ${(()=>{ const f=fichas().find(x=>x.id===E.id); return f&&f.rejeitada&&!f.enviada?`<div class="aviso-box" style="margin:8px 12px 0;background:#fde8e8;border-color:#e7a1a1"><b>Rejeitada pelo NATA</b> (${esc(f.rejeitada.por||"")}): ${esc(f.rejeitada.motivo)}</div>`:""; })()}
-    <main class="m w">${P.id==="fim"?revisaoHTML(D,erros):`<h2>${esc(P.t)}</h2><div id="w-info" class="nota"></div>${P.campos.map(campoHTML).join("")}<div id="w-erro" class="erro"></div>`}</main>
+    <main class="m w">${P.id==="fim"?revisaoHTML(D,erros):`<h2>${esc(P.t)}</h2>${(P.id==="morada"||P.id==="local")&&D.gps&&D.modalidade!=="E-commerce"&&!E.geoNao?`<div id="w-geo"></div>`:""}<div id="w-info" class="nota"></div>${P.campos.map(campoHTML).join("")}<div id="w-erro" class="erro"></div>`}</main>
     <div class="barra-baixo"><button id="w-ant" ${n<=1?"disabled":""}>◂ Anterior</button>${P.id==="fim"?`<button id="w-ver-ficha">📄 Completar na FOF</button><button class="prim" id="w-concluir" ${erros.length?"disabled":""}>Concluir</button>`:`<button class="prim" id="w-seg">Seguinte ▸</button>`}</div>`;
   const ler=()=>{ $app.querySelectorAll("main [data-k]").forEach(e=>{ const k=e.dataset.k;
       if(e.classList.contains("w-chips")){ const on=[...e.querySelectorAll(".w-chip.on")].map(b=>b.dataset.v); D[k]=e.dataset.t==="multi"?on:(on[0]||""); }
@@ -800,6 +815,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
     $app.querySelectorAll("[data-brc]").forEach(e=>e.onclick=()=>brig(e.dataset.brc));
     $app.querySelectorAll("[data-brx]").forEach(e=>e.onclick=()=>{ ler(); const b=(D.brigada||[]).filter(Boolean); b.splice(+e.dataset.brx,1); D.brigada=b; guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); });
     const ba=document.getElementById("w-br-add"); if(ba) ba.onclick=()=>{ const i=document.getElementById("w-br-out"); brig(i&&i.value); }; }
+  sugerirMorada(E,D);
   document.querySelectorAll(".w-foto-in").forEach(fin=>fin.addEventListener("click",()=>{ try{ ler(); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); }catch(e){} }));
   document.querySelectorAll(".w-foto-in").forEach(fin=>fin.onchange=async()=>{ ler(); D.fotos=D.fotos||[]; if(fin.files.length>MAX_FOTOS-D.fotos.length) alert("Máximo de "+MAX_FOTOS+" fotografias por FOF: só ficam as primeiras "+(MAX_FOTOS-D.fotos.length)+".");
     const L2=[...fin.files].slice(0,MAX_FOTOS-D.fotos.length), est=document.querySelector(".w-addf"), nota=est&&est.nextElementSibling; if(est) est.querySelectorAll("label").forEach(l=>{ l.style.pointerEvents="none"; l.style.opacity=".5"; });
