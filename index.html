@@ -228,6 +228,12 @@ function validarFOF(D){ const er=[];
   if(D.nif && !/^\d{9}$/.test(D.nif)) er.push(["nif","9 algarismos.","NIF"]);
   for(const k of ["cp","cpEst","idCp"]) if(D[k] && !/^\d{4}-\d{3}$/.test(D[k])) er.push([k,"Formato 0000-000.","Código postal"]);
   if((D.resultado||[]).some(x=>x!=="SI") && !D.infracoes) er.push(["infracoes","Obrigatório com CR ou CO.","Infrações"]);
+  // datas e horas que existem no calendário (31/02 ou 25:70 não passam)
+  const rot=k=>(FO_CAMPOS.find(x=>x.k===k)||{}).l||k;
+  for(const [k,v] of Object.entries(D)){ if(typeof v!=="string"||!v) continue;
+    const m=v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if(m){ const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3])); if(d.getUTCFullYear()!==+m[1]||d.getUTCMonth()!==+m[2]-1||d.getUTCDate()!==+m[3]||+m[1]<2000||+m[1]>2100) er.push([k,"Data inexistente.",rot(k)]); continue; }
+    if(/^(data|dt)/i.test(k) && /^\d{1,2}[\/.\- ]\d{1,2}/.test(v)) er.push([k,"Data inválida (dd/mm/aaaa).",rot(k)]);
+    if(/^hora(?!rio)/i.test(k)){ const h=v.match(/^(\d{1,2}):(\d{2})$/); if(!h||+h[1]>23||+h[2]>59) er.push([k,"Hora inválida (hh:mm).",rot(k)]); } }
   return er; }
 async function gerarPdfFOF(D){
   const PDFLib=await carregarPdfLib(); const {PDFDocument,StandardFonts,rgb}=PDFLib;
@@ -399,7 +405,7 @@ const COFRE_K=id=>"fofm-cofre-"+id;
 // FOF cifradas que não se conseguiram abrir: guardadas à parte (nunca são substituídas por uma lista vazia)
 function guardarCopiaIlegivel(){ try{ const o=localStorage.getItem(FICHAS_C()); if(o) localStorage.setItem(FICHAS_C()+"-ilegivel-"+Date.now(),o); }catch(e){} }
 const fichas=()=>CACHE?CACHE.slice():[];
-const guardarFicha=f=>{ if(!CACHE) return; const ant=CACHE.find(x=>x.id===f.id); if(ant){ for(const k of ["rejeitada","validada","recebida","enviadaEm","fotos"]) if(!(k in f)&&ant[k]) f[k]=ant[k]; } if(f.enviada) delete f.rejeitada; f.em=new Date().toISOString(); CACHE=[f,...CACHE.filter(x=>x.id!==f.id)]; Cofre.gravar(); };
+const guardarFicha=f=>{ if(!CACHE) return; const ant=CACHE.find(x=>x.id===f.id); if(ant){ for(const k of ["rejeitada","validada","recebida","enviadaEm","fotos","ultRetorno","manual"]) if(!(k in f)&&ant[k]) f[k]=ant[k]; } if(f.enviada) delete f.rejeitada; f.em=new Date().toISOString(); CACHE=[f,...CACHE.filter(x=>x.id!==f.id)]; Cofre.gravar(); };
 const guardarLista=L=>{ if(!CACHE) return; CACHE=L; Cofre.gravar(); };
 // fotografias (IndexedDB, cifradas com a mesma chave)
 function _idb(){ return new Promise((ok,ko)=>{ const q=indexedDB.open("fofm",1); q.onupgradeneeded=()=>q.result.createObjectStore("fotos"); q.onsuccess=()=>ok(q.result); q.onerror=()=>ko(q.error); }); }
@@ -517,7 +523,7 @@ function ecraLista(){ const L=fichas();
     ${L.some(f=>f.dados.estado==="concluida"&&!f.enviada)?`<div class="aviso-box">${temCaixa()?`Há FOF na fila (sem rede). São enviadas sozinhas quando houver ligação. <button id="l-env" style="margin-top:6px">Enviar agora</button>`:"Há FOF concluídas por enviar. Abra-as e carregue em <b>Enviar</b>."}</div>`:""}
     <h3 class="sec">📱 As minhas FOF neste telemóvel <span class="tag">${L.length}</span></h3>
     <div class="lista">${L.map(f=>`<div class="item" data-id="${esc(f.id)}"><div><b>${esc(foOperador(f.dados)||"(sem operador)")}</b><br><small>${fmtData(f.dados.data)} ${esc(f.dados.hora||"")}${f.dados.nif?" · NIF "+esc(f.dados.nif):""}</small>${f.rejeitada&&!f.enviada?`<br><small class="erro">Motivo: ${esc(f.rejeitada.motivo)}</small>`:""}</div>${est(f)}</div>`).join("")||`<p class="nota">Ainda não há FOF neste telemóvel.</p>`}</div>
-    <div class="rodape"><button id="l-email">📧 Enviar FOF do dia por e-mail</button><button id="l-dados">⚙ Definições</button><button id="l-bloq">🔒 Bloquear</button>${L.some(f=>f.enviada)?`<button id="l-limpar">🧹 Retirar as enviadas</button>`:""}</div>
+    <div class="rodape"><button id="l-email">📧 Enviar FOF do dia por e-mail</button><button id="l-dados">⚙ Definições</button><button id="l-bloq">🔒 Bloquear</button>${L.some(f=>f.enviada&&(f.recebida||f.validada))?`<button id="l-limpar">🧹 Retirar as recebidas na UO</button>`:""}</div>
     <p class="nota">${temCaixa()?"Ao concluir, a FOF é enviada cifrada para a ComandASAE (só a UO VI a consegue abrir).":"As fichas ficam só neste telemóvel até serem enviadas para a pasta <b>FOF do telemóvel</b> da ComandASAE (OneDrive)."}</p></main>`;
   document.getElementById("l-hist").onclick=ecraHistorico; document.getElementById("l-plan").onclick=ecraPlaneamento; document.getElementById("l-pend").onclick=()=>ecraPendentes();
   $app.querySelectorAll("[data-pend]").forEach(b=>b.onclick=()=>ecraPendentes(b.dataset.pend));
@@ -529,7 +535,7 @@ function ecraLista(){ const L=fichas();
   { const vistos=ler("fofm-av-vistos",[]), novos=((MOVEL&&MOVEL.av)||[]).filter(a=>!vistos.includes(a.id)); if(novos.length){ gravarLS("fofm-av-vistos",[...vistos,...novos.map(a=>a.id)].slice(-100)); setTimeout(async()=>{ if(!await notificar("📢 Aviso da UO",novos.map(a=>a.texto).join("\n"),"avisos")) alert("📢 Aviso da UO:\n\n"+novos.map(a=>a.texto).join("\n\n")); },200); } } if(!ecraLista._ret || Date.now()-ecraLista._ret>30000){ ecraLista._ret=Date.now(); verificarRetornos(); }
   document.getElementById("l-nova").onclick=novaFicha;
   document.getElementById("l-dados").onclick=ecraDados; document.getElementById("l-bloq").onclick=()=>{ desbloqueado=false; Cofre.fechar(); inicio(); };
-  const lp=document.getElementById("l-limpar"); if(lp) lp.onclick=()=>{ if(!confirm("Retirar deste telemóvel as FOF já enviadas?")) return; for(const f of fichas().filter(f=>f.enviada)) for(const x of (f.dados.fotos||[])) fotoApagar(f.id+":"+x.n); guardarLista(fichas().filter(f=>!f.enviada)); inicio(); };
+  const lp=document.getElementById("l-limpar"); if(lp) lp.onclick=()=>{ if(!confirm("Retirar deste telemóvel as FOF que a UO já recebeu? (as enviadas sem confirmação de receção ficam)")) return; const ok=f=>f.enviada&&(f.recebida||f.validada); for(const f of fichas().filter(ok)) for(const x of (f.dados.fotos||[])) fotoApagar(f.id+":"+x.n); guardarLista(fichas().filter(f=>!ok(f))); inicio(); };
   $app.querySelectorAll(".item").forEach(e=>e.onclick=()=>{ const f=fichas().find(x=>x.id===e.dataset.id); const D=JSON.parse(JSON.stringify(f.dados));
     const falta=validarFOF(D).map(x=>x[0]); UI.fof={id:f.id,dados:D,enviada:f.enviada,modo:D.estado==="concluida"?"ficha":"form",passo:falta.length?passoDe(falta[0]):PASSOS.length-1}; inicio(); }); }
 
@@ -564,12 +570,15 @@ async function pacoteOk(o,tipo){ if(!cfg.vk){ console.warn("sem chave de verific
   try{ const k=await crypto.subtle.importKey("raw",deB64(cfg.vk),{name:"ECDSA",namedCurve:"P-256"},false,["verify"]); return await crypto.subtle.verify({name:"ECDSA",hash:"SHA-256"},k,deB64(o.s),new TextEncoder().encode(tipo+"|"+(o.k||"")+"|"+o.iv+"|"+o.c)); }catch(e){ return false; } }
 // planeamento das brigadas (publicado cifrado pela ComandASAE no repositório da caixa; fica guardado no telemóvel para usar sem rede)
 const PLAN_K=()=>"fofm-plan-"+(cfg?cfg.id:"");
+// publicações da UO: uma cópia antiga (reposta por alguém no repositório) não substitui a mais recente
+const maisAntigo=(novo,atual)=>!!(atual&&atual.em&&(!novo||!novo.em||String(novo.em)<String(atual.em)));
+async function decifrarPub(o){ const k=await crypto.subtle.importKey("raw",deB64(cfg.pk),"AES-GCM",false,["decrypt"]); return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:deB64(o.iv)},k,deB64(o.c)))); }
 async function atualizarPlaneamento(){ if(!cfg||!cfg.gh||!cfg.pk||!navigator.onLine) return false;
   try{ const r=await fetch("https://api.github.com/repos/"+cfg.gh+"/contents/plan/planeamento.json?t="+Date.now(),{headers:{"Authorization":"Bearer "+cfg.ce,"Accept":"application/vnd.github+json"},cache:"no-store"}); if(!r.ok) return false;
     const j=await r.json(), o=JSON.parse(new TextDecoder().decode(deB64(String(j.content||"").replace(/\s/g,""))));
     if(!await pacoteOk(o,"plan")) throw new Error("planeamento sem assinatura válida da UO");
     const k=await crypto.subtle.importKey("raw",deB64(cfg.pk),"AES-GCM",false,["decrypt"]);
-    const p=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:deB64(o.iv)},k,deB64(o.c)))); gravarLS(PLAN_K(),{iv:o.iv,c:o.c}); PLANO=p; return true; }catch(e){ console.warn("planeamento:",e); return false; } }
+    const p=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:deB64(o.iv)},k,deB64(o.c)))); if(maisAntigo(p,PLANO)) throw new Error("planeamento mais antigo do que o guardado (ignorado)"); gravarLS(PLAN_K(),{iv:o.iv,c:o.c}); PLANO=p; return true; }catch(e){ console.warn("planeamento:",e); return false; } }
 // respostas do NATA (validada / rejeitada com motivo), deixadas cifradas pela ComandASAE em retorno/<n.º de cartão>/
 async function verificarRetornos(){ if(!cfg||!cfg.gh||!cfg.pk||!cfg.cartao||!navigator.onLine) return 0; const H={"Authorization":"Bearer "+cfg.ce,"Accept":"application/vnd.github+json"};
   const base="https://api.github.com/repos/"+cfg.gh+"/contents/retorno/"+encodeURIComponent(cfg.cartao); let n=0, rej=[];
@@ -580,6 +589,7 @@ async function verificarRetornos(){ if(!cfg||!cfg.gh||!cfg.pk||!cfg.cartao||!nav
         const o=JSON.parse(new TextDecoder().decode(deB64(String(j.content||"").replace(/\s/g,"")))); if(!await pacoteOk(o,"retorno")) throw new Error("resposta sem assinatura válida da UO"); if(o.k==="i"&&!kI) throw new Error("resposta cifrada com a chave individual: reative este telemóvel");
         const x=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:deB64(o.iv)},o.k==="i"?kI:k,deB64(o.c))));
         const L=fichas(); let fi=L.find(y=>y.id===x.id);
+        if(fi&&fi.ultRetorno&&String(x.em||"")<=String(fi.ultRetorno)) x.estado="antigo"; else if(fi) fi.ultRetorno=x.em;   // resposta mais antiga do que a última já lida: ignorada
         if(x.estado==="recebida"){ if(fi){ fi.recebida={em:x.em}; guardarFicha(fi); notificar("FOF recebida na UO",foOperador(fi.dados)||"FOF","fof-"+x.id); } }
         else if(x.estado==="validada"){ if(fi){ fi.validada={por:x.por,em:x.em}; delete fi.rejeitada; guardarFicha(fi); notificar("FOF validada ✓",(foOperador(fi.dados)||"FOF")+" — validada pelo NATA","fof-"+x.id); } }
         else if(x.estado==="rejeitada"){ if(!fi&&x.dados&&typeof x.dados==="object"){ const dd=Object.assign({},x.dados); for(const k of ["fotos","pdf","pdfBackup","reportagem","fofRegIds","rejeicoes","validadaPor","validadaEm","recebidaEm","recebidaPor","origem","validacao","inspetor","brigadaNomes"]) delete dd[k]; fi={id:String(x.id),dados:dd}; } if(fi){ fi.dados.estado="rascunho"; fi.enviada=false; delete fi.validada; fi.rejeitada={motivo:x.motivo,por:x.por,em:x.em}; guardarFicha(fi); rej.push(fi); } }
@@ -599,7 +609,7 @@ async function pedirNotificacoes(){ if(!("Notification" in window)) return alert
 const MOVEL_K=()=>"fofm-movel-"+(cfg?cfg.id:""); let MOVEL=null;
 async function atualizarMovel(){ if(!cfg||!cfg.gh||!cfg.pk||!navigator.onLine) return false;
   try{ const r=await fetch("https://api.github.com/repos/"+cfg.gh+"/contents/plan/movel.json?t="+Date.now(),{headers:{"Authorization":"Bearer "+cfg.ce,"Accept":"application/vnd.github.raw"},cache:"no-store"}); if(!r.ok) return false;
-    const o=JSON.parse(await r.text()); if(!await pacoteOk(o,"movel")) throw new Error("pendentes/avisos sem assinatura válida da UO"); const antes=JSON.stringify(MOVEL&&MOVEL.av||[]); gravarLS(MOVEL_K(),{iv:o.iv,c:o.c}); await lerMovelGuardado(); if(JSON.stringify(MOVEL&&MOVEL.av||[])!==antes&&desbloqueado&&!UI.fof&&!UI.ecra) ecraLista(); return true; }catch(e){ console.warn("pendentes/avisos:",e); return false; } }
+    const o=JSON.parse(await r.text()); if(!await pacoteOk(o,"movel")) throw new Error("pendentes/avisos sem assinatura válida da UO"); if(maisAntigo(await decifrarPub(o),MOVEL)) throw new Error("pendentes mais antigos do que os guardados (ignorado)"); const antes=JSON.stringify(MOVEL&&MOVEL.av||[]); gravarLS(MOVEL_K(),{iv:o.iv,c:o.c}); await lerMovelGuardado(); if(JSON.stringify(MOVEL&&MOVEL.av||[])!==antes&&desbloqueado&&!UI.fof&&!UI.ecra) ecraLista(); return true; }catch(e){ console.warn("pendentes/avisos:",e); return false; } }
 let MEUS=null, REATIVAR=false;
 async function idOpaco(){ const k=await crypto.subtle.importKey("raw",deB64(cfg.pk),{name:"HMAC",hash:"SHA-256"},false,["sign"]); return [...new Uint8Array(await crypto.subtle.sign("HMAC",k,new TextEncoder().encode("insp:"+String(cfg.cartao))))].map(b=>b.toString(16).padStart(2,"0")).join("").slice(0,32); }
 async function lerMovelGuardado(){ MOVEL=null; MEUS=null; REATIVAR=false; const o=ler(MOVEL_K(),null); if(!o||!o.c||!cfg||!cfg.pk) return; try{ const k=await crypto.subtle.importKey("raw",deB64(cfg.pk),"AES-GCM",false,["decrypt"]); MOVEL=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:deB64(o.iv)},k,deB64(o.c)))); }catch(e){ return; }
@@ -637,7 +647,7 @@ function ecraPendentes(foco){ UI.ecra="pend"; const p=meusPend()||{}, rejL=ficha
 const HIST_K=()=>"fofm-hist-"+(cfg?cfg.id:""); let HIST=null;
 async function atualizarHistorico(){ if(!cfg||!cfg.gh||!cfg.pk||!navigator.onLine) return false;
   try{ const r=await fetch("https://api.github.com/repos/"+cfg.gh+"/contents/plan/historico.json?t="+Date.now(),{headers:{"Authorization":"Bearer "+cfg.ce,"Accept":"application/vnd.github.raw"},cache:"no-store"}); if(!r.ok) return false;
-    const o=JSON.parse(await r.text()); if(!await pacoteOk(o,"hist")) throw new Error("histórico sem assinatura válida da UO"); gravarLS(HIST_K(),{iv:o.iv,c:o.c}); await lerHistGuardado(); return true; }catch(e){ console.warn("histórico:",e); return false; } }
+    const o=JSON.parse(await r.text()); if(!await pacoteOk(o,"hist")) throw new Error("histórico sem assinatura válida da UO"); if(maisAntigo(await decifrarPub(o),HIST)) throw new Error("histórico mais antigo do que o guardado (ignorado)"); gravarLS(HIST_K(),{iv:o.iv,c:o.c}); await lerHistGuardado(); return true; }catch(e){ console.warn("histórico:",e); return false; } }
 async function lerHistGuardado(){ HIST=null; const o=ler(HIST_K(),null); if(!o||!o.c||!cfg||!cfg.pk) return; try{ const k=await crypto.subtle.importKey("raw",deB64(cfg.pk),"AES-GCM",false,["decrypt"]); HIST=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:deB64(o.iv)},k,deB64(o.c)))); }catch(e){} }
 function pesquisarHist(q){ if(!HIST||!Array.isArray(HIST.r)) return []; q=String(q||"").trim(); const dig=q.replace(/\D/g,""), t=normTxt(q);
   if(/^\d+$/.test(q.replace(/\s/g,""))) return dig.length>=3?HIST.r.filter(x=>x.n&&x.n.startsWith(dig)).slice(0,40):[];
@@ -904,8 +914,9 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
   document.querySelectorAll(".w-foto-in").forEach(fin=>fin.onchange=async()=>{ ler(); D.fotos=D.fotos||[]; if(fin.files.length>MAX_FOTOS-D.fotos.length) alert("Máximo de "+MAX_FOTOS+" fotografias por FOF: só ficam as primeiras "+(MAX_FOTOS-D.fotos.length)+".");
     const L2=[...fin.files].slice(0,MAX_FOTOS-D.fotos.length), est=document.querySelector(".w-addf"), nota=est&&est.nextElementSibling; if(est) est.querySelectorAll("label").forEach(l=>{ l.style.pointerEvents="none"; l.style.opacity=".5"; });
     for(const [i,f] of L2.entries()){ if(nota) nota.textContent="A processar "+(i+1)+"/"+L2.length+"…";
-      try{ const tot=D.fotos.reduce((t,x)=>t+(+x.tam||0),0); if(tot>=MAX_FOTOS_BYTES){ alert("As fotografias desta FOF já ocupam "+(tot/1048576).toFixed(1)+" MB (máximo "+(MAX_FOTOS_BYTES/1048576)+" MB para o envio). Não foram acrescentadas mais."); break; }
-        const b=await reduzirFoto(f,tot>MAX_FOTOS_BYTES/2?1200:1400,tot>MAX_FOTOS_BYTES/2?0.65:0.72); const n=(D.fotos.reduce((m,x)=>Math.max(m,+x.n||0),0))+1; await fotoGuardar(E.id+":"+n,b); D.fotos.push({n,nome:"foto-"+n+".jpg",tam:b.size}); }
+      try{ const tot=D.fotos.reduce((t,x)=>t+(+x.tam||0),0); if(tot>=MAX_FOTOS_BYTES-150000){ alert("As fotografias desta FOF já ocupam "+(tot/1048576).toFixed(1)+" MB (máximo "+(MAX_FOTOS_BYTES/1048576)+" MB para o envio). Não foram acrescentadas mais."); break; }
+        const b=await reduzirFoto(f,tot>MAX_FOTOS_BYTES/2?1200:1400,tot>MAX_FOTOS_BYTES/2?0.65:0.72); if(tot+b.size>MAX_FOTOS_BYTES){ alert("Esta fotografia ultrapassava o máximo de "+(MAX_FOTOS_BYTES/1048576)+" MB por FOF: não foi acrescentada."); break; }
+        const n=(D.fotos.reduce((m,x)=>Math.max(m,+x.n||0),0))+1; await fotoGuardar(E.id+":"+n,b); D.fotos.push({n,nome:"foto-"+n+".jpg",tam:b.size}); }
       catch(e){ alert("Fotografia não guardada: "+(/HEIC|HEIF/i.test((f.type||"")+(f.name||""))?"formato HEIC não suportado neste telemóvel (escolha \"Mais compatível\" nas definições da câmara ou tire a fotografia pelo botão 📷).":e.message)); } }
     guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); });
   const f1=ins.find(e=>!e.value)||ins[0]; if(f1 && !("ontouchstart" in window && P.id==="fim")) setTimeout(()=>f1.focus(),150);
@@ -944,7 +955,10 @@ async function cifrar(obj){ const pub=await crypto.subtle.importKey("raw",deB64(
   return {formato:"fof-cifrada",v:1,id:obj.id,kid:cfg.kid,epk:b64(epk),iv:b64(iv),c:b64(c),em:new Date().toISOString()}; }
 const temCaixa=()=>!!(cfg&&(cfg.srv||cfg.gh)&&cfg.ce&&cfg.pub);
 async function pacoteFOF(f){ const o={formato:"comandasae-fof",versao:1,id:f.id,enviadaEm:new Date().toISOString(),dados:f.dados,fotos:[]};
-  for(const x of (f.dados.fotos||[])){ try{ const b=await fotoLer(f.id+":"+x.n); if(b) o.fotos.push({nome:x.nome||("foto-"+x.n+".jpg"),b64:_b64(await b.arrayBuffer())}); }catch(e){} }
+  const falta=[]; for(const x of (f.dados.fotos||[])){ let b=null; try{ b=await fotoLer(f.id+":"+x.n); }catch(e){} if(b) o.fotos.push({nome:x.nome||("foto-"+x.n+".jpg"),b64:_b64(await b.arrayBuffer())}); else falta.push(x.n); }
+  if(falta.length){ const e=new Error("Não foi possível ler "+(falta.length===1?"a fotografia n.º "+falta[0]:falta.length+" fotografias")+" desta FOF neste telemóvel. Abra a FOF, retire a(s) fotografia(s) em falta (ou volte a tirá-las) e conclua de novo."); e.fotos=true; throw e; }
+  // revisão: impressão digital do conteúdo (igual em todas as tentativas de envio da mesma versão)
+  { const dg=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify([f.dados,o.fotos.map(x=>x.b64.length+":"+x.b64.slice(0,64))]))); o.rev=[...new Uint8Array(dg)].map(b=>b.toString(16).padStart(2,"0")).join("").slice(0,32); }
   // sem lista de fotografias (FOF refeita a partir da rejeição): a UO mantém as que já tem; lista vazia: o inspetor retirou-as todas
   o.fotosManter=!Array.isArray(f.dados.fotos);
   // autor: n.º de cartão desta ativação + código HMAC com a chave individual do inspetor (a UO confirma quem enviou)
@@ -954,20 +968,28 @@ async function enviarServidor(f){ const o=await pacoteFOF(f);
   if(cfg.gh){ // caixa num repositório privado do GitHub (o ficheiro vai cifrado)
     const nome="caixa/"+new Date().toISOString().replace(/[:.]/g,"-")+"_"+f.id+".json", corpo=b64(new TextEncoder().encode(JSON.stringify(await cifrar(o))));
     const r=await fetch("https://api.github.com/repos/"+cfg.gh+"/contents/"+nome,{method:"PUT",headers:{"Authorization":"Bearer "+cfg.ce,"Accept":"application/vnd.github+json","Content-Type":"application/json"},body:JSON.stringify({message:"FOF "+f.id.slice(0,8),content:corpo})});
-    if(!r.ok){ let m=""; try{ m=(await r.json()).message; }catch(e){} const e=new Error(m||("erro "+r.status)); e.servidor=r.status<500;
+    if(!r.ok){ let m=""; try{ m=(await r.json()).message; }catch(e){} const e=new Error(m||("erro "+r.status)); e.servidor=r.status<500; e.estado=r.status;
       if(r.status===401||r.status===403||r.status===404){ if(!cfg.envioRecusado) notificar("Envio recusado","O servidor recusou o envio das FOF. Contacte a Chefia; pode enviar por e-mail.","recusa"); cfg.envioRecusado={em:new Date().toISOString(),estado:r.status}; gravarLS(CFG_K,cfg); } throw e; }
     if(cfg.envioRecusado){ delete cfg.envioRecusado; gravarLS(CFG_K,cfg); } return; }
   const r=await fetch(cfg.srv.replace(/\/+$/,"")+"/enviar",{method:"POST",headers:{"Content-Type":"application/json","X-Chave-Envio":cfg.ce},body:JSON.stringify(await cifrar(o))});
-  if(!r.ok){ let m=""; try{ m=(await r.json()).erro; }catch(e){} const e=new Error(m||("erro "+r.status)); e.servidor=true; throw e; } }
+  if(!r.ok){ let m=""; try{ m=(await r.json()).erro; }catch(e){} const e=new Error(m||("erro "+r.status)); e.servidor=true; e.estado=r.status; throw e; } }
 let aEnviar=false;
+// envia uma cópia fixa da FOF; no fim só a marca como enviada se ninguém a alterou entretanto (senão fica na fila com a correção)
+async function enviarRevisao(f){ const rev=f.em, snap=JSON.parse(JSON.stringify(f)); await enviarServidor(snap);
+  const cur=(CACHE||[]).find(x=>x.id===f.id); if(!cur||cur.em!==rev||JSON.stringify(cur.dados)!==JSON.stringify(snap.dados)) return false;
+  cur.enviada=true; cur.enviadaEm=new Date().toISOString(); delete cur.avisoFotos; guardarFicha(cur); return true; }
 async function enviarPendentes(silencio){ if(aEnviar||!temCaixa()||!navigator.onLine) return 0; aEnviar=true; let n=0;
-  try{ for(const f of fichas().filter(x=>x.dados.estado==="concluida"&&!x.enviada)){ try{ await enviarServidor(f); f.enviada=true; f.enviadaEm=new Date().toISOString(); guardarFicha(f); n++; }catch(e){ if(e.servidor&&!silencio) alert("O servidor recusou a FOF: "+e.message+"\nPode enviar as FOF do dia por e-mail (botão na lista)."); break; } } }
+  try{ for(const f of fichas().filter(x=>x.dados.estado==="concluida"&&!x.enviada)){ try{ if(await enviarRevisao(f)) n++; }
+      catch(e){ if(e.fotos){ if(!silencio||!f.avisoFotos){ f.avisoFotos=true; alert((foOperador(f.dados)||"FOF")+": "+e.message); } continue; }   // problema só desta FOF: as outras seguem
+        if(e.servidor&&e.estado===413){ if(!silencio) alert("FOF demasiado grande para o servidor ("+(foOperador(f.dados)||"")+"): retire fotografias."); continue; }
+        if(e.servidor&&!silencio) alert("O servidor recusou a FOF: "+e.message+"\nPode enviar as FOF do dia por e-mail (botão na lista)."); break; } } }
   finally{ aEnviar=false; } if(n){ toast(n+" FOF enviada(s) para a ComandASAE."); if(!UI.fof&&desbloqueado) ecraLista(); } return n; }
 window.addEventListener("online",()=>{ if(desbloqueado) enviarPendentes(true); }); setInterval(()=>{ if(!document.hidden&&desbloqueado){ enviarPendentes(true); verificarRetornos(); } },60000);
 async function enviar(){ const E=UI.fof, D=E.dados;
   if(temCaixa()){ if(!navigator.onLine){ toast("Sem rede: a FOF fica na fila e é enviada sozinha quando houver ligação.",4000); UI.fof=null; return inicio(); }
-    try{ await enviarServidor(fichas().find(x=>x.id===E.id)||{id:E.id,dados:D}); E.enviada=true; guardarFicha({id:E.id,dados:D,enviada:true,enviadaEm:new Date().toISOString()}); toast("FOF enviada para a ComandASAE."); UI.fof=null; return inicio(); }
-    catch(e){ if(e.servidor) alert("O servidor recusou a FOF: "+e.message+"\nFica na fila; contacte a Chefia. Entretanto pode enviar as FOF do dia por e-mail (botão na lista)."); else toast("Sem ligação ao servidor: a FOF fica na fila e é enviada sozinha.",4000); UI.fof=null; return inicio(); } }
+    if(aEnviar){ toast("A FOF ficou na fila e é enviada já a seguir.",3500); UI.fof=null; inicio(); setTimeout(()=>enviarPendentes(true),4000); return; }
+    aEnviar=true; try{ const f=fichas().find(x=>x.id===E.id)||{id:E.id,dados:D}; const ok=await enviarRevisao(f); aEnviar=false; if(ok){ E.enviada=true; toast("FOF enviada para a ComandASAE."); } else enviarPendentes(true); UI.fof=null; return inicio(); }
+    catch(e){ aEnviar=false; if(e.fotos){ alert(e.message); UI.fof=null; return inicio(); } if(e.servidor) alert("O servidor recusou a FOF: "+e.message+"\nFica na fila; contacte a Chefia. Entretanto pode enviar as FOF do dia por e-mail (botão na lista)."); else toast("Sem ligação ao servidor: a FOF fica na fila e é enviada sozinha.",4000); UI.fof=null; return inicio(); } }
   return partilhar(); }
 // alternativa (problema no envio): as FOF do dia, em PDF e ficheiro de dados, pelo "Partilhar" → Mail
 async function enviarDiaEmail(){ const h=hojeISO(); const L=fichas().filter(f=>f.dados.estado==="concluida"&&(f.dados.data===h||!f.recebida));
@@ -980,14 +1002,15 @@ async function enviarDiaEmail(){ const h=hojeISO(); const L=fichas().filter(f=>f
 // sem servidor configurado: PDF + ficheiro de dados pelo "Partilhar" do telemóvel → OneDrive, pasta "FOF do telemóvel"
 async function partilhar(){ const E=UI.fof, D=E.dados;
   try{ const b=await gerarPdfFOF(D); let t=""; for(let i=0;i<b.length;i+=0x8000) t+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
-    const nome=nomeFich(D), dadosF=new File([JSON.stringify({formato:"comandasae-fof",versao:1,id:E.id,enviadaEm:new Date().toISOString(),dados:D,pdf:btoa(t)})],nome+".fof.json",{type:"application/json"});
+    const pac=await pacoteFOF(fichas().find(x=>x.id===E.id)||{id:E.id,dados:D}); pac.pdf=btoa(t);   // com as fotografias e o código do autor
+    const nome=nomeFich(D), dadosF=new File([JSON.stringify(pac)],nome+".fof.json",{type:"application/json"});
     const pdfF=new File([b],nome+".pdf",{type:"application/pdf"});
     if(navigator.canShare && navigator.canShare({files:[dadosF,pdfF]})){
       alert("No ecrã seguinte escolha OneDrive e guarde na pasta:\nComandASAE › FOF do telemóvel");
       try{ await navigator.share({files:[dadosF,pdfF],title:nome}); }catch(e){ if(e.name==="AbortError") return toast("Envio cancelado."); throw e; } }
     else { for(const f of [dadosF,pdfF]){ const u=URL.createObjectURL(f); const a=document.createElement("a"); a.href=u; a.download=f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),60000); }
       alert("Os dois ficheiros foram descarregados. Guarde-os na pasta ComandASAE › FOF do telemóvel (OneDrive)."); }
-    E.enviada=true; guardarFicha({id:E.id,dados:D,enviada:true}); toast("FOF enviada."); UI.fof=null; inicio(); }
+    E.enviada=true; guardarFicha({id:E.id,dados:D,enviada:true,manual:true,enviadaEm:new Date().toISOString()}); toast("Ficheiros preparados. A FOF só fica \"Recebida\" quando a UO a importar."); UI.fof=null; inicio(); }
   catch(e){ alert("Não foi possível enviar: "+e.message); } }
 if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 lerAtivacao(); window.addEventListener("hashchange",()=>{ lerAtivacao(); if(pendente) inicio(); });
