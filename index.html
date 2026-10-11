@@ -724,6 +724,11 @@ function ecraFicha(){ const E=UI.fof, D=E.dados, pode=D.estado!=="concluida";
 }
 /* ---------- Formulário passo a passo (campos obrigatórios, pela ordem da ficha); a ficha pode ser vista e editada a qualquer momento ---------- */
 const OE_OP=["Prod. 1.ª","Indústria","Grossista","Armazenista","Embalador","Transportador","Imp./Dist","Restauração e Bebidas","Retalhista","P. Serv."];
+// ditado por voz (quando o navegador o permite; no iPhone precisa de rede)
+const RECON=window.SpeechRecognition||window.webkitSpeechRecognition||null;
+function ditar(ta,bt){ if(!RECON) return; if(ditar._r){ try{ ditar._r.stop(); }catch(e){} return; } const r=new RECON(); ditar._r=r; r.lang="pt-PT"; r.interimResults=false; r.continuous=true;
+  const ant=bt.textContent; bt.textContent="⏹ Parar"; r.onresult=ev=>{ let t=""; for(let i=ev.resultIndex;i<ev.results.length;i++) if(ev.results[i].isFinal) t+=ev.results[i][0].transcript; if(t){ ta.value=(ta.value.trim()?ta.value.trim()+" ":"")+t.trim(); ta.dispatchEvent(new Event("input",{bubbles:true})); } };
+  r.onerror=e=>{ if(e.error!=="aborted"&&e.error!=="no-speech") toast("Ditado indisponível ("+e.error+")."); }; r.onend=()=>{ ditar._r=null; bt.textContent=ant; }; try{ r.start(); }catch(e){ ditar._r=null; bt.textContent=ant; } }
 const MAX_FOTOS=20, MAX_FOTOS_BYTES=10*1048576;   // teto do envio (cifrado em base64 fica ~1,4×)
 const PASSOS=[
  {id:"acao",t:"Ação",campos:[{k:"modalidade",t:"um",op:["Físico","E-commerce"],l:"Fiscalização"},{k:"gps",t:"gps",l:"Localização"},{k:"data",t:"date",l:"Data"},{k:"hora",t:"time",l:"Hora de início"},{k:"nufTipo",t:"um",op:["PL","NP"],l:"NUF"},{k:"nuf",l:"N.º",ph:"116/26",im:"text"}]},
@@ -749,7 +754,8 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
     if(c.t==="fotos"){ const F=D.fotos||[]; return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-fotos">${F.map(x=>`<div class="w-foto" data-n="${x.n}"><img alt=""><button type="button" data-rmf="${x.n}">✕</button></div>`).join("")}</div>
       ${F.length<MAX_FOTOS?`<div class="w-addf"><label class="w-addfoto">📷 Tirar fotografia<input class="w-foto-in" type="file" accept="image/*" capture="environment" hidden></label><label class="w-addfoto">🖼 Escolher da galeria<input class="w-foto-in" type="file" accept="image/*" multiple hidden></label></div>`:""}<p class="nota">${F.length} de ${MAX_FOTOS} · seguem com a FOF num PDF "Reportagem fotográfica".</p></div>`; }
     if(c.t==="brig"){ const b=Array.isArray(v)?v:[]; return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-brig">${[0,1,2,3,4].map(j=>`<input inputmode="numeric" data-b="${j}" value="${esc(b[j]||"")}" placeholder="${j===0?"o seu":""}">`).join("")}</div></div>`; }
-    if(c.t==="area") return `<div class="w-campo"><label>${esc(c.l)}</label><textarea data-k="${c.k}" rows="${c.linhas||3}">${esc(v||"")}</textarea></div>`;
+    if(c.t==="area") return `<div class="w-campo"><label>${esc(c.l)}${RECON?` <button type="button" class="w-voz" data-voz="${c.k}" title="Ditar por voz">🎤 Ditar</button>`:""}</label><textarea data-k="${c.k}" rows="${c.linhas||3}">${esc(v||"")}</textarea>
+      <p class="nota">Dica: pode ditar com o microfone do teclado${ehIOS?" e ler texto de um documento ou rótulo com a câmara (tocar no campo → <b>Digitalizar texto</b>)":" e ler texto de um documento ou rótulo com a câmara (teclado → <b>Digitalizar texto</b> / Google Lens)"}.</p></div>`;
     const val=c.t==="date"?(v||""):v||""; return `<div class="w-campo"><label>${esc(c.l)}</label><input data-k="${c.k}" type="${c.t==="date"?"date":c.t==="time"?"time":"text"}" ${c.im?`inputmode="${c.im}"`:""} ${c.max?`maxlength="${c.max}"`:""} ${c.lista?`list="${c.lista}"`:""} ${c.ph?`placeholder="${esc(c.ph)}"`:""} enterkeyhint="next" value="${esc(val)}" autocomplete="off"></div>`; };
   $app.innerHTML=`<header class="ficha"><button id="w-sair">◂</button><b>FOF</b><span class="tag">${n}/${vis.length}</span><span class="zoom"><button id="w-ficha">👁 Ver FOF</button></span></header>
     <datalist id="fo-distritos">${FO_DISTRITOS.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
@@ -783,6 +789,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
   $app.querySelectorAll(".w-foto").forEach(async el=>{ try{ const b=await fotoLer(E.id+":"+el.dataset.n); if(b) el.querySelector("img").src=URL.createObjectURL(b); }catch(e){} });
   $app.querySelectorAll("[data-rmf]").forEach(b=>b.onclick=async()=>{ ler(); const n=+b.dataset.rmf; await fotoApagar(E.id+":"+n); D.fotos=(D.fotos||[]).filter(x=>x.n!==n); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); });
   // antes de abrir a câmara/galeria grava o que está escrito (alguns Android fecham a página quando a câmara abre)
+  $app.querySelectorAll("[data-voz]").forEach(b=>b.onclick=()=>{ const ta=$app.querySelector(`main textarea[data-k="${b.dataset.voz}"]`); if(ta) ditar(ta,b); });
   document.querySelectorAll(".w-foto-in").forEach(fin=>fin.addEventListener("click",()=>{ try{ ler(); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); }catch(e){} }));
   document.querySelectorAll(".w-foto-in").forEach(fin=>fin.onchange=async()=>{ ler(); D.fotos=D.fotos||[]; if(fin.files.length>MAX_FOTOS-D.fotos.length) alert("Máximo de "+MAX_FOTOS+" fotografias por FOF: só ficam as primeiras "+(MAX_FOTOS-D.fotos.length)+".");
     const L2=[...fin.files].slice(0,MAX_FOTOS-D.fotos.length), est=document.querySelector(".w-addf"), nota=est&&est.nextElementSibling; if(est) est.querySelectorAll("label").forEach(l=>{ l.style.pointerEvents="none"; l.style.opacity=".5"; });
