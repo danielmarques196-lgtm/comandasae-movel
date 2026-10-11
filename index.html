@@ -463,14 +463,16 @@ function ecraLogin(conta,ativacao){ $app.innerHTML=topo()+`<main class="m">${ati
     if(!(cfg.wPw && await Cofre.abrir("wPw",p))){ await Cofre.novo(); }
     await Cofre.proteger("wPw",p);
     delete cfg.pin; delete cfg.wPin; gravarLS(CFG_K,cfg); try{ navigator.storage&&navigator.storage.persist&&navigator.storage.persist(); }catch(e){} ecraNovoPin(); }; }
-function tecladoPin(titulo,nota,aoFim){ let v=""; $app.innerHTML=topo(esc(cfg.nome))+`<main class="m pin"><h2>${titulo}</h2><p class="nota">${nota||""}</p><div class="pontos">${"<i></i>".repeat(4)}</div><div id="p-e" class="erro"></div>
+// PIN: 6 algarismos nos PIN novos (os antigos, de 4, continuam a funcionar até serem trocados)
+const pinN=()=>cfg&&cfg.pin?(cfg.pinLen||4):6;
+function tecladoPin(titulo,nota,aoFim,N){ N=N||pinN(); let v=""; $app.innerHTML=topo(esc(cfg.nome))+`<main class="m pin"><h2>${titulo}</h2><p class="nota">${nota||""}</p><div class="pontos">${"<i></i>".repeat(N)}</div><div id="p-e" class="erro"></div>
    <div class="teclado">${[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map(k=>k===""?"<span></span>":`<button data-k="${k}">${k}</button>`).join("")}</div><div id="p-extra"></div></main>`;
   const pts=[...$app.querySelectorAll(".pontos i")], mostrar=()=>pts.forEach((p,i)=>p.classList.toggle("on",i<v.length));
-  $app.querySelectorAll("[data-k]").forEach(b=>b.onclick=async()=>{ const k=b.dataset.k; if(k==="⌫") v=v.slice(0,-1); else if(v.length<4) v+=k; mostrar(); if(v.length===4){ const r=v; v=""; setTimeout(mostrar,250); await aoFim(r); } }); }
-function ecraNovoPin(){ tecladoPin("Crie um PIN","4 algarismos. Vai usá-lo para abrir a app.",async p1=>{ tecladoPin("Repita o PIN","",async p2=>{
+  $app.querySelectorAll("[data-k]").forEach(b=>b.onclick=async()=>{ const k=b.dataset.k; if(k==="⌫") v=v.slice(0,-1); else if(v.length<N) v+=k; mostrar(); if(v.length===N){ const r=v; v=""; setTimeout(mostrar,250); await aoFim(r); } }); }
+function ecraNovoPin(){ tecladoPin("Crie um PIN","6 algarismos. Vai usá-lo para abrir a app.",async p1=>{ tecladoPin("Repita o PIN","",async p2=>{
     if(p1!==p2){ alert("Os PIN não coincidem."); return ecraNovoPin(); }
-    const salt=hex(crypto.getRandomValues(new Uint8Array(16))); cfg.pin={salt,hash:await pbkdf2(p2,salt,100000)}; cfg.falhas=0; gravarLS(CFG_K,cfg);
-    if(!DEK) await Cofre.novo(); await Cofre.proteger("wPin",p2); await Cofre.carregar(); desbloqueado=true; toast("PIN criado."); inicio(); }); }); }
+    const salt=hex(crypto.getRandomValues(new Uint8Array(16))); cfg.pin={salt,hash:await pbkdf2(p2,salt,100000)}; cfg.pinLen=p2.length; cfg.falhas=0; gravarLS(CFG_K,cfg);
+    if(!DEK) await Cofre.novo(); await Cofre.proteger("wPin",p2); await Cofre.carregar(); desbloqueado=true; toast("PIN criado."); inicio(); },6); },6); }
 function ecraPin(){ tecladoPin("Introduza o PIN",esc(cfg.id),async p=>{ if(await pbkdf2(p,cfg.pin.salt,100000)===cfg.pin.hash){ cfg.falhas=0; gravarLS(CFG_K,cfg);
       if(!(cfg.wPin && await Cofre.abrir("wPin",p))){ await Cofre.novo(); await Cofre.proteger("wPin",p); }   // ativações antigas: cria o cofre (os dados antigos são migrados)
       await Cofre.carregar(); desbloqueado=true; return inicio(); }
