@@ -724,10 +724,14 @@ function ecraFicha(){ const E=UI.fof, D=E.dados, pode=D.estado!=="concluida";
 }
 /* ---------- Formulário passo a passo (campos obrigatórios, pela ordem da ficha); a ficha pode ser vista e editada a qualquer momento ---------- */
 const OE_OP=["Prod. 1.ª","Indústria","Grossista","Armazenista","Embalador","Transportador","Imp./Dist","Restauração e Bebidas","Retalhista","P. Serv."];
+// inspetores para escolher na brigada (publicados com o planeamento; sem lista, os que aparecem no planeamento)
+function listaInspPlan(){ const m=new Map(); for(const i of (PLANO&&PLANO.ins)||[]) if(i&&i.c) m.set(String(i.c),String(i.n||""));
+  if(!m.size) for(const x of (PLANO&&PLANO.r)||[]) for(const i of x.i||[]) if(i&&i.c) m.set(String(i.c),String(i.n||""));
+  return [...m].map(([c,n])=>({c,n:n||"n.º "+c})).sort((a,b)=>a.n.localeCompare(b.n,"pt")); }
 const MAX_FOTOS=20, MAX_FOTOS_BYTES=10*1048576;   // teto do envio (cifrado em base64 fica ~1,4×)
 const PASSOS=[
  {id:"acao",t:"Ação",campos:[{k:"modalidade",t:"um",op:["Físico","E-commerce"],l:"Fiscalização"},{k:"gps",t:"gps",l:"Localização"},{k:"data",t:"date",l:"Data"},{k:"hora",t:"time",l:"Hora de início"},{k:"nufTipo",t:"um",op:["PL","NP"],l:"NUF"},{k:"nuf",l:"N.º",ph:"116/26",im:"text"}]},
- {id:"brig",t:"Brigada",campos:[{k:"brigada",t:"brig",l:"N.º de cartão dos inspetores"}]},
+ {id:"brig",t:"Brigada",campos:[{k:"brigada",t:"brig",l:"Inspetores da brigada"}]},
  {id:"nif",t:"NIF do operador",campos:[{k:"nif",l:"NIF",im:"numeric",max:9,ph:"9 algarismos"}]},
  {id:"desig",t:"Operador",campos:[{k:"desig",l:"Designação social"},{k:"estab",l:"Designação do estabelecimento (se diferente)"}]},
  {id:"morada",t:"Estabelecimento",campos:[{k:"moradaEst",t:"area",l:"Morada do estabelecimento"},{k:"cpEst",l:"Código postal",im:"numeric",ph:"0000-000",cp:true}]},
@@ -748,7 +752,13 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
       return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-gps">${D.gps?`📍 ${D.gps.lat}, ${D.gps.lon} <span class="nota">(±${D.gps.prec} m)</span>`:`<span class="nota">Sem localização.</span>`} <button type="button" id="w-gps">📍 ${D.gps?"Atualizar":"Obter"}</button></div></div>`; }
     if(c.t==="fotos"){ const F=D.fotos||[]; return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-fotos">${F.map(x=>`<div class="w-foto" data-n="${x.n}"><img alt=""><button type="button" data-rmf="${x.n}">✕</button></div>`).join("")}</div>
       ${F.length<MAX_FOTOS?`<div class="w-addf"><label class="w-addfoto">📷 Tirar fotografia<input class="w-foto-in" type="file" accept="image/*" capture="environment" hidden></label><label class="w-addfoto">🖼 Escolher da galeria<input class="w-foto-in" type="file" accept="image/*" multiple hidden></label></div>`:""}<p class="nota">${F.length} de ${MAX_FOTOS} · seguem com a FOF num PDF "Reportagem fotográfica".</p></div>`; }
-    if(c.t==="brig"){ const b=Array.isArray(v)?v:[]; return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-brig">${[0,1,2,3,4].map(j=>`<input inputmode="numeric" data-b="${j}" value="${esc(b[j]||"")}" placeholder="${j===0?"o seu":""}">`).join("")}</div></div>`; }
+    if(c.t==="brig"){ let b=(Array.isArray(v)?v:[]).filter(Boolean).map(String); if(!b.length&&cfg.cartao) b=[String(cfg.cartao)]; const L=listaInspPlan(), nomeDe=x=>(L.find(i=>i.c===x)||{}).n||"";
+      // escolhe-se pelo nome; na FOF ficam os n.º de cartão
+      return `<div class="w-campo"><label>${esc(c.l)}</label><p class="nota">Toque nos colegas que estão consigo (até 5 na brigada). Na FOF ficam os n.º de cartão.</p>
+        <div class="w-brig-sel">${b.map((x,j)=>`<span class="tag ${j?"ok":""}" style="margin:0 4px 4px 0;display:inline-block">${esc(nomeDe(x)||"n.º "+x)} <small>(${esc(x)})</small>${j?` <button type="button" data-brx="${j}" aria-label="Retirar" style="padding:0 6px">✕</button>`:" · você"}</span>`).join("")}</div>
+        ${L.length?`<div class="w-brchips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${L.filter(i=>i.c!==String(cfg.cartao)).map(i=>`<button type="button" class="w-chip ${b.includes(i.c)?"on":""}" data-brc="${esc(i.c)}">${esc(i.n)}</button>`).join("")}</div>`:`<p class="nota">Sem a lista de inspetores (abra a app com rede para a receber). Pode escrever o n.º de cartão abaixo.</p>`}
+        <div style="display:flex;gap:6px;margin-top:10px"><input id="w-br-out" inputmode="numeric" placeholder="Outro n.º de cartão" style="flex:1"><button type="button" id="w-br-add">Acrescentar</button></div>
+        ${b.map((x,j)=>`<input type="hidden" data-b="${j}" value="${esc(x)}">`).join("")}</div>`; }
     if(c.t==="area") return `<div class="w-campo"><label>${esc(c.l)}</label><textarea data-k="${c.k}" rows="${c.linhas||3}">${esc(v||"")}</textarea>
       <p class="nota">Dica: pode ler texto de um documento ou rótulo com a câmara (${ehIOS?"tocar no campo → <b>Digitalizar texto</b>":"teclado → <b>Digitalizar texto</b> / Google Lens"}).</p></div>`;
     const val=c.t==="date"?(v||""):v||""; return `<div class="w-campo"><label>${esc(c.l)}</label><input data-k="${c.k}" type="${c.t==="date"?"date":c.t==="time"?"time":"text"}" ${c.im?`inputmode="${c.im}"`:""} ${c.max?`maxlength="${c.max}"`:""} ${c.lista?`list="${c.lista}"`:""} ${c.ph?`placeholder="${esc(c.ph)}"`:""} enterkeyhint="next" value="${esc(val)}" autocomplete="off"></div>`; };
@@ -784,6 +794,12 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
   $app.querySelectorAll(".w-foto").forEach(async el=>{ try{ const b=await fotoLer(E.id+":"+el.dataset.n); if(b) el.querySelector("img").src=URL.createObjectURL(b); }catch(e){} });
   $app.querySelectorAll("[data-rmf]").forEach(b=>b.onclick=async()=>{ ler(); const n=+b.dataset.rmf; await fotoApagar(E.id+":"+n); D.fotos=(D.fotos||[]).filter(x=>x.n!==n); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); });
   // antes de abrir a câmara/galeria grava o que está escrito (alguns Android fecham a página quando a câmara abre)
+  { const brig=x=>{ ler(); let b=(D.brigada||[]).filter(Boolean).map(String); if(!b.length&&cfg.cartao) b=[String(cfg.cartao)]; x=String(x||"").replace(/\D/g,""); if(!x) return;
+      const i=b.indexOf(x); if(i===0) return; if(i>0) b.splice(i,1); else { if(b.length>=5) return toast("Máximo de 5 inspetores na brigada."); b.push(x); }
+      D.brigada=b; guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); };
+    $app.querySelectorAll("[data-brc]").forEach(e=>e.onclick=()=>brig(e.dataset.brc));
+    $app.querySelectorAll("[data-brx]").forEach(e=>e.onclick=()=>{ ler(); const b=(D.brigada||[]).filter(Boolean); b.splice(+e.dataset.brx,1); D.brigada=b; guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); });
+    const ba=document.getElementById("w-br-add"); if(ba) ba.onclick=()=>{ const i=document.getElementById("w-br-out"); brig(i&&i.value); }; }
   document.querySelectorAll(".w-foto-in").forEach(fin=>fin.addEventListener("click",()=>{ try{ ler(); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); }catch(e){} }));
   document.querySelectorAll(".w-foto-in").forEach(fin=>fin.onchange=async()=>{ ler(); D.fotos=D.fotos||[]; if(fin.files.length>MAX_FOTOS-D.fotos.length) alert("Máximo de "+MAX_FOTOS+" fotografias por FOF: só ficam as primeiras "+(MAX_FOTOS-D.fotos.length)+".");
     const L2=[...fin.files].slice(0,MAX_FOTOS-D.fotos.length), est=document.querySelector(".w-addf"), nota=est&&est.nextElementSibling; if(est) est.querySelectorAll("label").forEach(l=>{ l.style.pointerEvents="none"; l.style.opacity=".5"; });
