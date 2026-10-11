@@ -66,6 +66,9 @@ header .zoom button{font-size:14px}
 .atencao{background:#fff;border:2px solid #e7a1a1;border-radius:10px;padding:4px 10px 10px;margin:10px 0}.at{display:block;width:100%;text-align:left;margin-top:6px;padding:9px 10px;font-size:14px;border-radius:8px}.at.mau{background:#fdecea;border-color:#e7a1a1;color:#8e1c1c;font-weight:600}.at.aviso{background:#fff4d6;border-color:#e0b04a;color:#5c4300}
 .tag.mau{background:#fde0e0;color:#a32020}
 .w-addf{display:grid;grid-template-columns:1fr 1fr;gap:8px}.w-addf .w-addfoto{padding:14px 6px;font-size:14.5px}
+
+/* toques rápidos (ex.: o mesmo algarismo do PIN duas vezes) não fazem zoom; o zoom com dois dedos continua */
+html,body,button,a,input,select,textarea,label{touch-action:manipulation}
 </style></head><body><div id="app"></div><div id="toast"></div>
 <script>!function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"function"==typeof define&&define.amd?define(["exports"],e):e((t=t||self).PDFLib={})}(this,(function(t){"use strict";
 /*! *****************************************************************************
@@ -385,12 +388,16 @@ const Cofre={
   async novo(){ DEKraw=crypto.getRandomValues(new Uint8Array(32)); DEK=await crypto.subtle.importKey("raw",DEKraw,"AES-GCM",false,["encrypt","decrypt"]); },
   async proteger(tipo,segredo){ const salt=_b64(crypto.getRandomValues(new Uint8Array(16))); cfg[tipo]=Object.assign({salt},await _cif(await _kek(segredo,salt),DEKraw)); gravarLS(CFG_K,cfg); },
   async abrir(tipo,segredo){ const w=cfg[tipo]; if(!w) return false; try{ DEKraw=await _dec(await _kek(segredo,w.salt),w); DEK=await crypto.subtle.importKey("raw",DEKraw,"AES-GCM",false,["encrypt","decrypt"]); return true; }catch(e){ return false; } },
-  async carregar(){ CACHE=[]; const o=ler(FICHAS_C(),null); if(o){ try{ CACHE=JSON.parse(new TextDecoder().decode(await _dec(DEK,o))); }catch(e){ console.warn("FOF guardadas não decifradas",e); CACHE=[]; } }
+  async carregar(){ CACHE=[]; const o=ler(FICHAS_C(),null); if(o){ try{ CACHE=JSON.parse(new TextDecoder().decode(await _dec(DEK,o))); }catch(e){ console.warn("FOF guardadas não decifradas",e); guardarCopiaIlegivel(); CACHE=[]; setTimeout(()=>alert("Não foi possível abrir as FOF guardadas neste telemóvel com esta chave. Foi guardada uma cópia cifrada (não é apagada). Contacte a Chefia antes de terminar sessão ou desinstalar a app."),300); } }
     const antigo=ler(FICHAS_K(),null); if(Array.isArray(antigo)&&antigo.length){ const ids=new Set(CACHE.map(x=>x.id)); antigo.forEach(f=>{ if(!ids.has(f.id)) CACHE.push(f); }); await this.gravarJa(); try{ localStorage.removeItem(FICHAS_K()); }catch(e){} }
     await lerPlanoGuardado(); await lerHistGuardado(); await lerMovelGuardado(); },
   _t:null, gravar(){ clearTimeout(this._t); this._t=setTimeout(()=>this.gravarJa(),250); },
   async gravarJa(){ if(!DEK||!CACHE) return; gravarLS(FICHAS_C(),await _cif(DEK,new TextEncoder().encode(JSON.stringify(CACHE)))); },
-  fechar(){ if(this._t){ clearTimeout(this._t); this.gravarJa(); } DEKraw=null; DEK=null; CACHE=null; PLANO=null; HIST=null; MOVEL=null; } };
+  _p:null, async esperar(){ try{ await this._p; }catch(e){} },
+  fechar(){ if(this._t){ clearTimeout(this._t); this._p=this.gravarJa(); } DEKraw=null; DEK=null; CACHE=null; PLANO=null; HIST=null; MOVEL=null; } };
+const COFRE_K=id=>"fofm-cofre-"+id;
+// FOF cifradas que não se conseguiram abrir: guardadas à parte (nunca são substituídas por uma lista vazia)
+function guardarCopiaIlegivel(){ try{ const o=localStorage.getItem(FICHAS_C()); if(o) localStorage.setItem(FICHAS_C()+"-ilegivel-"+Date.now(),o); }catch(e){} }
 const fichas=()=>CACHE?CACHE.slice():[];
 const guardarFicha=f=>{ if(!CACHE) return; const ant=CACHE.find(x=>x.id===f.id); if(ant){ for(const k of ["rejeitada","validada","recebida","enviadaEm","fotos"]) if(!(k in f)&&ant[k]) f[k]=ant[k]; } if(f.enviada) delete f.rejeitada; f.em=new Date().toISOString(); CACHE=[f,...CACHE.filter(x=>x.id!==f.id)]; Cofre.gravar(); };
 const guardarLista=L=>{ if(!CACHE) return; CACHE=L; Cofre.gravar(); };
@@ -455,12 +462,13 @@ function ecraLogin(conta,ativacao){ $app.innerHTML=topo()+`<main class="m">${ati
     const certo=u===String(conta.id).toLowerCase() && await pbkdf2(p,conta.salt,conta.iter||210000)===conta.hash;
     ok.disabled=false; ok.textContent="Entrar";
     if(!certo){ document.getElementById("g-e").textContent="Utilizador ou palavra-passe errados."; return; }
-    const cofreAnt=cfg&&cfg.id===conta.id?{wPw:cfg.wPw,wPin:cfg.wPin}:{};
+    const cofreAnt=cfg&&cfg.id===conta.id?{wPw:cfg.wPw,wPin:cfg.wPin}:(ler(COFRE_K(conta.id),null)||{});
     if(ativacao){ const mesmo=cfg&&cfg.id===conta.id; cfg={id:conta.id,nome:conta.nome,cartao:conta.cartao||"",uruo:conta.uruo||"UO VI",salt:conta.salt,iter:conta.iter,hash:conta.hash,telemovel:mesmo?cfg.telemovel:"",ativadaEm:new Date().toISOString(),
       srv:conta.srv||"",gh:conta.gh||"",ce:conta.ce||"",pub:conta.pub||"",kid:conta.kid||"",pk:conta.pk||"",ki:conta.ki||"",vk:conta.vk||""}; pendente=null; }
     else { cfg.bloqueado=false; cfg.falhas=0; }
     if(cofreAnt.wPw) cfg.wPw=cofreAnt.wPw;
-    if(!(cfg.wPw && await Cofre.abrir("wPw",p))){ await Cofre.novo(); }
+    if(!(cfg.wPw && await Cofre.abrir("wPw",p))){ if(ler(FICHAS_C(),null)) guardarCopiaIlegivel(); await Cofre.novo(); }
+    try{ localStorage.removeItem(COFRE_K(conta.id)); }catch(e){}
     await Cofre.proteger("wPw",p);
     delete cfg.pin; delete cfg.wPin; gravarLS(CFG_K,cfg); try{ navigator.storage&&navigator.storage.persist&&navigator.storage.persist(); }catch(e){} ecraNovoPin(); }; }
 // PIN de 4 algarismos (decisão da Chefia)
@@ -491,8 +499,10 @@ function ecraDados(){ $app.innerHTML=topo(esc(cfg.nome))+`<main class="m"><h2>De
   document.getElementById("d-ok").onclick=()=>{ cfg.telemovel=document.getElementById("d-tel").value.trim(); gravarLS(CFG_K,cfg); inicio(); };
   document.getElementById("d-notif").onclick=async()=>{ if(podeNotificar()) notificar("ComandASAE Móvel","Teste de notificação.","teste"); else { await pedirNotificacoes(); ecraDados(); } };
   document.getElementById("d-x").onclick=inicio; document.getElementById("d-pin").onclick=()=>{ cfg.bloqueado=true; delete cfg.pin; gravarLS(CFG_K,cfg); desbloqueado=false; Cofre.fechar(); inicio(); };
-  document.getElementById("d-sair").onclick=()=>{ const porEnviar=fichas().filter(f=>!f.enviada).length; if(!confirm((porEnviar?"Há "+porEnviar+" FOF por enviar neste telemóvel; ficam guardadas para quando voltar a entrar.\n\n":"")+"Terminar a sessão? Para voltar a usar a app terá de a ativar de novo na ComandASAE.")) return;
-    try{ localStorage.removeItem(CFG_K); }catch(e){} cfg=null; desbloqueado=false; Cofre.fechar(); inicio(); }; }
+  document.getElementById("d-sair").onclick=async()=>{ const porEnviar=fichas().filter(f=>!f.enviada).length; if(!confirm((porEnviar?"Há "+porEnviar+" FOF por enviar neste telemóvel; ficam guardadas para quando voltar a entrar.\n\n":"")+"Terminar a sessão? Para voltar a usar a app terá de a ativar de novo na ComandASAE.")) return;
+    const id=cfg.id, wPw=cfg.wPw; Cofre.fechar(); await Cofre.esperar();
+    if(wPw) gravarLS(COFRE_K(id),{wPw,em:new Date().toISOString()});   // sem isto as FOF guardadas ficavam ilegíveis na nova ativação
+    try{ localStorage.removeItem(CFG_K); }catch(e){} cfg=null; desbloqueado=false; inicio(); }; }
 function ecraLista(){ const L=fichas();
   const est=f=>f.rejeitada&&!f.enviada?`<span class="tag mau">Rejeitada</span>`:f.validada?`<span class="tag ok">Validada ✓</span>`:f.recebida?`<span class="tag ok">Recebida na UO</span>`:f.enviada?`<span class="tag aviso">Enviada</span>`:f.dados.estado==="concluida"?`<span class="tag aviso">${temCaixa()?"Na fila":"Por enviar"}</span>`:`<span class="tag">Rascunho</span>`;
   $app.innerHTML=topo(esc(cfg.nome)+" · "+esc(cfg.cartao))+`<main class="m">
@@ -550,7 +560,7 @@ function painelHTML(L){ const p=meusPend()||{}, I=p.ind&&typeof p.ind==="object"
 
 // FOF nova: dados do inspetor, data e hora; a brigada e o NUF da última FOF deste dia no telemóvel
 // só se aceita o que a ComandASAE assinou (chave de verificação entregue no QR de ativação)
-async function pacoteOk(o,tipo){ if(!cfg.vk) return true; if(!o||!o.s||!o.iv||!o.c) return false;
+async function pacoteOk(o,tipo){ if(!cfg.vk){ console.warn("sem chave de verificação da UO: ative o telemóvel de novo"); return false; } if(!o||!o.s||!o.iv||!o.c) return false;
   try{ const k=await crypto.subtle.importKey("raw",deB64(cfg.vk),{name:"ECDSA",namedCurve:"P-256"},false,["verify"]); return await crypto.subtle.verify({name:"ECDSA",hash:"SHA-256"},k,deB64(o.s),new TextEncoder().encode(tipo+"|"+(o.k||"")+"|"+o.iv+"|"+o.c)); }catch(e){ return false; } }
 // planeamento das brigadas (publicado cifrado pela ComandASAE no repositório da caixa; fica guardado no telemóvel para usar sem rede)
 const PLAN_K=()=>"fofm-plan-"+(cfg?cfg.id:"");
@@ -935,6 +945,10 @@ async function cifrar(obj){ const pub=await crypto.subtle.importKey("raw",deB64(
 const temCaixa=()=>!!(cfg&&(cfg.srv||cfg.gh)&&cfg.ce&&cfg.pub);
 async function pacoteFOF(f){ const o={formato:"comandasae-fof",versao:1,id:f.id,enviadaEm:new Date().toISOString(),dados:f.dados,fotos:[]};
   for(const x of (f.dados.fotos||[])){ try{ const b=await fotoLer(f.id+":"+x.n); if(b) o.fotos.push({nome:x.nome||("foto-"+x.n+".jpg"),b64:_b64(await b.arrayBuffer())}); }catch(e){} }
+  // sem lista de fotografias (FOF refeita a partir da rejeição): a UO mantém as que já tem; lista vazia: o inspetor retirou-as todas
+  o.fotosManter=!Array.isArray(f.dados.fotos);
+  // autor: n.º de cartão desta ativação + código HMAC com a chave individual do inspetor (a UO confirma quem enviou)
+  o.autor=String(cfg.cartao||""); if(cfg.ki){ const k=await crypto.subtle.importKey("raw",deB64(cfg.ki),{name:"HMAC",hash:"SHA-256"},false,["sign"]); o.mac=_b64(await crypto.subtle.sign("HMAC",k,new TextEncoder().encode(JSON.stringify(o)))); }
   return o; }
 async function enviarServidor(f){ const o=await pacoteFOF(f);
   if(cfg.gh){ // caixa num repositório privado do GitHub (o ficheiro vai cifrado)
