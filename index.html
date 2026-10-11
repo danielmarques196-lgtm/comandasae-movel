@@ -53,6 +53,7 @@ header .zoom button{font-size:14px}
 .w-gps{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.w-fotos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
 .w-foto{position:relative;aspect-ratio:1;background:#e9ece6;border-radius:8px;overflow:hidden}.w-foto img{width:100%;height:100%;object-fit:cover}.w-foto button{position:absolute;top:4px;right:4px;padding:2px 8px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:0}
 .w-addfoto{display:block;text-align:center;border:2px dashed #9bb37a;border-radius:10px;padding:16px;font-weight:600;color:var(--marca);cursor:pointer}
+.hist{background:#fff;border:1px solid var(--borda);border-radius:10px;padding:10px;margin-bottom:10px}.hist-t{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}.hist-t td{border-top:1px solid #eef0ea;padding:4px;vertical-align:top}
 </style></head><body><div id="app"></div><div id="toast"></div>
 <script>!function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"function"==typeof define&&define.amd?define(["exports"],e):e((t=t||self).PDFLib={})}(this,(function(t){"use strict";
 /*! *****************************************************************************
@@ -374,10 +375,10 @@ const Cofre={
   async abrir(tipo,segredo){ const w=cfg[tipo]; if(!w) return false; try{ DEKraw=await _dec(await _kek(segredo,w.salt),w); DEK=await crypto.subtle.importKey("raw",DEKraw,"AES-GCM",false,["encrypt","decrypt"]); return true; }catch(e){ return false; } },
   async carregar(){ CACHE=[]; const o=ler(FICHAS_C(),null); if(o){ try{ CACHE=JSON.parse(new TextDecoder().decode(await _dec(DEK,o))); }catch(e){ console.warn("FOF guardadas não decifradas",e); CACHE=[]; } }
     const antigo=ler(FICHAS_K(),null); if(Array.isArray(antigo)&&antigo.length){ const ids=new Set(CACHE.map(x=>x.id)); antigo.forEach(f=>{ if(!ids.has(f.id)) CACHE.push(f); }); await this.gravarJa(); try{ localStorage.removeItem(FICHAS_K()); }catch(e){} }
-    await lerPlanoGuardado(); },
+    await lerPlanoGuardado(); await lerHistGuardado(); },
   _t:null, gravar(){ clearTimeout(this._t); this._t=setTimeout(()=>this.gravarJa(),250); },
   async gravarJa(){ if(!DEK||!CACHE) return; gravarLS(FICHAS_C(),await _cif(DEK,new TextEncoder().encode(JSON.stringify(CACHE)))); },
-  fechar(){ if(this._t){ clearTimeout(this._t); this.gravarJa(); } DEKraw=null; DEK=null; CACHE=null; PLANO=null; } };
+  fechar(){ if(this._t){ clearTimeout(this._t); this.gravarJa(); } DEKraw=null; DEK=null; CACHE=null; PLANO=null; HIST=null; } };
 const fichas=()=>CACHE?CACHE.slice():[];
 const guardarFicha=f=>{ if(!CACHE) return; const ant=CACHE.find(x=>x.id===f.id); if(ant){ for(const k of ["rejeitada","validada","recebida","enviadaEm","fotos"]) if(!(k in f)&&ant[k]) f[k]=ant[k]; } if(f.enviada) delete f.rejeitada; f.em=new Date().toISOString(); CACHE=[f,...CACHE.filter(x=>x.id!==f.id)]; Cofre.gravar(); };
 const guardarLista=L=>{ if(!CACHE) return; CACHE=L; Cofre.gravar(); };
@@ -480,6 +481,7 @@ function ecraLista(){ const L=fichas();
   const est=f=>f.rejeitada&&!f.enviada?`<span class="tag mau">Rejeitada</span>`:f.validada?`<span class="tag ok">Validada ✓</span>`:f.recebida?`<span class="tag ok">Recebida na UO</span>`:f.enviada?`<span class="tag aviso">Enviada</span>`:f.dados.estado==="concluida"?`<span class="tag aviso">${temCaixa()?"Na fila":"Por enviar"}</span>`:`<span class="tag">Rascunho</span>`;
   $app.innerHTML=topo(esc(cfg.nome)+" · "+esc(cfg.cartao))+`<main class="m">
     <button class="prim grande" id="l-nova">＋ Nova FOF</button>
+    <button class="grande" id="l-hist" style="margin-top:8px">🔎 Operador já fiscalizado?</button>
     ${(()=>{ const h=hojeISO(), H=L.filter(f=>f.dados.data===h&&f.dados.estado==="concluida"), c=k=>H.filter(f=>(f.dados.resultado||[]).includes(k)).length; return `<div class="resumo-dia"><b>Hoje</b> — ${H.length} FOF concluída(s) · S/I ${c("SI")} · CO ${c("CO")} · CR ${c("CR")}${H.length?` · ${H.filter(f=>f.recebida).length} recebida(s) na UO`:""}</div>`; })()}
     ${cfg.envioRecusado?`<div class="aviso-box" style="background:#fde8e8;border-color:#e7a1a1"><b>Envio recusado pelo servidor</b> (${esc(String(cfg.envioRecusado.estado))}). Contacte a Chefia (o token pode ter expirado). Entretanto, use <b>📧 Enviar FOF do dia por e-mail</b>.</div>`:""}
     ${L.some(f=>f.enviada&&!f.recebida&&f.enviadaEm&&Date.now()-Date.parse(f.enviadaEm)>24*3600000)?`<div class="aviso-box">Há FOF enviadas há mais de 24 h sem confirmação de receção na UO. <button id="l-reenv" style="margin-top:6px">Reenviar</button></div>`:""}
@@ -488,10 +490,11 @@ function ecraLista(){ const L=fichas();
     <div class="lista">${L.map(f=>`<div class="item" data-id="${esc(f.id)}"><div><b>${esc(foOperador(f.dados)||"(sem operador)")}</b><br><small>${fmtData(f.dados.data)} ${esc(f.dados.hora||"")}${f.dados.nif?" · NIF "+esc(f.dados.nif):""}</small>${f.rejeitada&&!f.enviada?`<br><small class="erro">Motivo: ${esc(f.rejeitada.motivo)}</small>`:""}</div>${est(f)}</div>`).join("")||`<p class="nota">Ainda não há FOF neste telemóvel.</p>`}</div>
     <div class="rodape"><button id="l-email">📧 Enviar FOF do dia por e-mail</button><button id="l-dados">⚙ Definições</button><button id="l-bloq">🔒 Bloquear</button>${L.some(f=>f.enviada)?`<button id="l-limpar">🧹 Retirar as enviadas</button>`:""}</div>
     <p class="nota">${temCaixa()?"Ao concluir, a FOF é enviada cifrada para a ComandASAE (só a UO VI a consegue abrir).":"As fichas ficam só neste telemóvel até serem enviadas para a pasta <b>FOF do telemóvel</b> da ComandASAE (OneDrive)."}</p></main>`;
+  document.getElementById("l-hist").onclick=ecraHistorico;
   document.getElementById("l-email").onclick=()=>enviarDiaEmail().catch(e=>alert("Erro: "+e.message));
   const lr=document.getElementById("l-reenv"); if(lr) lr.onclick=()=>{ for(const f of fichas().filter(f=>f.enviada&&!f.recebida&&f.enviadaEm&&Date.now()-Date.parse(f.enviadaEm)>24*3600000)){ f.enviada=false; guardarFicha(f); } enviarPendentes(false); };
   const le=document.getElementById("l-env"); if(le) le.onclick=()=>{ if(!navigator.onLine) return toast("Sem rede."); enviarPendentes(false); };
-  enviarPendentes(true); atualizarPlaneamento(); if(!ecraLista._ret || Date.now()-ecraLista._ret>30000){ ecraLista._ret=Date.now(); verificarRetornos(); }
+  enviarPendentes(true); atualizarPlaneamento(); atualizarHistorico(); if(!ecraLista._ret || Date.now()-ecraLista._ret>30000){ ecraLista._ret=Date.now(); verificarRetornos(); }
   document.getElementById("l-nova").onclick=novaFicha;
   document.getElementById("l-dados").onclick=ecraDados; document.getElementById("l-bloq").onclick=()=>{ desbloqueado=false; Cofre.fechar(); inicio(); };
   const lp=document.getElementById("l-limpar"); if(lp) lp.onclick=()=>{ if(!confirm("Retirar deste telemóvel as FOF já enviadas?")) return; for(const f of fichas().filter(f=>f.enviada)) for(const x of (f.dados.fotos||[])) fotoApagar(f.id+":"+x.n); guardarLista(fichas().filter(f=>!f.enviada)); inicio(); };
@@ -523,6 +526,26 @@ async function verificarRetornos(){ if(!cfg||!cfg.gh||!cfg.pk||!cfg.cartao||!nav
   catch(e){ console.warn("retornos:",e); }
   if(rej.length) alert(rej.length===1?"O NATA rejeitou a FOF de "+(foOperador(rej[0].dados)||"(sem operador)")+":\n\n"+rej[0].rejeitada.motivo+"\n\nCorrija-a e conclua de novo.":rej.length+" FOF foram rejeitadas pelo NATA. Veja o motivo em cada uma e corrija-as.");
   if(n && desbloqueado && !UI.fof) ecraLista(); return n; }
+// histórico de fiscalizações dos operadores (publicado cifrado pela ComandASAE; guardado no telemóvel para pesquisar sem rede)
+const HIST_K=()=>"fofm-hist-"+(cfg?cfg.id:""); let HIST=null;
+async function atualizarHistorico(){ if(!cfg||!cfg.gh||!cfg.pk||!navigator.onLine) return false;
+  try{ const r=await fetch("https://api.github.com/repos/"+cfg.gh+"/contents/plan/historico.json?t="+Date.now(),{headers:{"Authorization":"Bearer "+cfg.ce,"Accept":"application/vnd.github.raw"},cache:"no-store"}); if(!r.ok) return false;
+    const o=JSON.parse(await r.text()); gravarLS(HIST_K(),{iv:o.iv,c:o.c}); await lerHistGuardado(); return true; }catch(e){ console.warn("histórico:",e); return false; } }
+async function lerHistGuardado(){ HIST=null; const o=ler(HIST_K(),null); if(!o||!o.c||!cfg||!cfg.pk) return; try{ const k=await crypto.subtle.importKey("raw",deB64(cfg.pk),"AES-GCM",false,["decrypt"]); HIST=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:deB64(o.iv)},k,deB64(o.c)))); }catch(e){} }
+function pesquisarHist(q){ if(!HIST||!Array.isArray(HIST.r)) return []; q=String(q||"").trim(); const dig=q.replace(/\D/g,""), t=normTxt(q);
+  if(/^\d+$/.test(q.replace(/\s/g,""))) return dig.length>=3?HIST.r.filter(x=>x.n&&x.n.startsWith(dig)).slice(0,40):[];
+  if(t.length<3) return []; return HIST.r.filter(x=>[...(x.d||[]),...(x.e||[])].some(n=>normTxt(n).includes(t))).slice(0,40); }
+function histHTML(x){ const ult=(x.h||[])[0]; return `<div class="hist"><b>${esc((x.d||[])[0]||(x.e||[])[0]||"(sem nome)")}</b>${x.n?` <span class="nota">NIF ${esc(x.n)}</span>`:""}
+  ${(x.e||[]).length?`<div class="nota">Estabelecimento: ${esc(x.e.join("; "))}</div>`:""}<div class="nota">${(x.h||[]).length} registo(s)${ult?` · último ${fmtData(ult[0])}`:""}</div>
+  <table class="hist-t">${(x.h||[]).map(h=>`<tr><td>${fmtData(h[0])}</td><td><b>${esc(h[1])}</b></td><td class="${/infra|CO|CR/i.test(h[2])&&!/sem/i.test(h[2])?"erro":""}">${esc(h[2])}</td><td>${esc(h[3]||"")}${h[4]?` <span class="nota">(${esc(h[4])})</span>`:""}</td></tr>`).join("")}</table></div>`; }
+function ecraHistorico(){ $app.innerHTML=topo(esc(cfg.nome))+`<main class="m"><div style="display:flex;gap:8px;align-items:center"><button id="h-v">◂</button><h2 style="margin:0">Operador já fiscalizado?</h2></div>
+    <p class="nota">Pesquise por NIF, designação social ou nome do estabelecimento. ${HIST&&HIST.em?"Dados de "+fmtDH2(HIST.em)+".":"Ainda sem dados: abra com rede."}</p>
+    <input id="h-q" type="search" placeholder="NIF ou nome…" autocomplete="off" style="width:100%;font-size:18px;padding:12px;border:1px solid var(--borda);border-radius:10px">
+    <div id="h-r" style="margin-top:12px"></div></main>`;
+  const q=document.getElementById("h-q"), r=document.getElementById("h-r");
+  const mostrar=()=>{ const L=pesquisarHist(q.value); r.innerHTML=L.length?L.map(histHTML).join(""):(q.value.trim().length>=3?`<div class="aviso-box">Sem fiscalizações registadas para "${esc(q.value.trim())}".</div>`:""); };
+  q.oninput=mostrar; q.focus(); document.getElementById("h-v").onclick=()=>inicio(); }
+const fmtDH2=iso=>{ const d=new Date(iso); return isNaN(d)?"":d.toLocaleDateString("pt-PT")+" "+d.toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"}); };
 async function lerPlanoGuardado(){ PLANO=null; const o=ler(PLAN_K(),null); if(!o||!o.c||!cfg||!cfg.pk) return; try{ const k=await crypto.subtle.importKey("raw",deB64(cfg.pk),"AES-GCM",false,["decrypt"]); PLANO=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:deB64(o.iv)},k,deB64(o.c)))); }catch(e){} }
 function brigadaDoDia(d){ const p=PLANO; if(!p||!Array.isArray(p.r)) return null; const eu=String(cfg.cartao);
   return p.r.find(x=>x.d===d && x.t!=="ausencia" && (x.i||[]).some(m=>String(m.c)===eu)) || null; }
@@ -654,6 +677,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
   ins.forEach((e,j)=>{ if(e.tagName==="INPUT") e.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); const s2=ins[j+1]; if(s2) s2.focus(); else seguinte(); } }); e.addEventListener("change",ler); });
   // NIF completo: dados do operador de FOF anteriores neste telemóvel
   const nif=$app.querySelector('main [data-k="nif"]'); if(nif) nif.addEventListener("input",()=>{ const v=nif.value.replace(/\D/g,""); if(v.length!==9) return;
+    { const h=(HIST&&HIST.r||[]).find(x=>x.n===v); if(h){ const u=h.h[0]; toast("Já fiscalizado: "+h.h.length+" registo(s), último "+fmtData(u[0])+" ("+u[1]+(u[2]?" — "+u[2]:"")+").",5000); } }
     const ant=fichas().filter(f=>f.id!==E.id&&f.dados.nif===v); if(ant.length){ let c=0; for(const k of FO_OPERADOR) if(!D[k]&&ant[0].dados[k]){ D[k]=ant[0].dados[k]; c++; } if(!(D.tipoOE||[]).length&&ant[0].dados.tipoOE){ D.tipoOE=ant[0].dados.tipoOE.slice(); c++; } if(c) toast("Operador já fiscalizado em "+fmtData(ant[0].dados.data)+": dados copiados. Confirme.",3500); }
     setTimeout(seguinte,300); });
   const cp=$app.querySelector('main [data-k="cpEst"]'); if(cp) cp.addEventListener("input",()=>{ let d=cp.value.replace(/\D/g,"").slice(0,7); cp.value=d.length>4?d.slice(0,4)+"-"+d.slice(4):d; });
@@ -678,7 +702,8 @@ function revisaoHTML(D,erros){ const v=k=>{ const x=D[k]; return Array.isArray(x
   const linhas=[["Data / hora",fmtData(D.data)+" "+(D.hora||""),"data"],["NUF",[D.nufTipo,D.nuf].filter(Boolean).join("/"),"nuf"],["Brigada",(D.brigada||[]).filter(Boolean).join(" · "),"brigada"],["NIF",v("nif"),"nif"],["Operador",v("desig"),"desig"],
     ["Morada",[D.moradaEst,D.cpEst].filter(Boolean).join(", "),"moradaEst"],["Local",[D.freguesiaEst,D.concelhoEst,D.distritoEst].filter(Boolean).join(" · "),"concelhoEst"],["Tipo OE",v("tipoOE"),"tipoOE"],["Atividade",v("tipoActiv"),"tipoActiv"],
     ["Resultado",(D.resultado||[]).map(x=>x==="SI"?"Sem infração":x).join(" + "),"resultado"],["Fiscalização / localização",(D.modalidade||"Físico")+(D.gps?" · 📍 "+D.gps.lat+", "+D.gps.lon:""),"modalidade"],["Fotografias",String((D.fotos||[]).length),"fotos"]].concat((D.resultado||[]).some(x=>x!=="SI")?[["Infrações",v("infracoes"),"infracoes"]]:[]);
-  return `<h2>Revisão</h2>${erros.length?`<div class="aviso-box">Falta: ${erros.map(x=>esc(x[2])).join(", ")}</div>`:`<p class="nota">Campos obrigatórios completos. Pode concluir, ou completar outros campos na ficha (apreensões, identificação, amostras…).</p>`}
+  const hx=D.nif&&(HIST&&HIST.r||[]).find(x=>x.n===D.nif);
+  return `<h2>Revisão</h2>${hx?`<details class="aviso-box"><summary><b>Operador já fiscalizado</b> — ${hx.h.length} registo(s), último ${fmtData(hx.h[0][0])}</summary>${histHTML(hx)}</details>`:""}${erros.length?`<div class="aviso-box">Falta: ${erros.map(x=>esc(x[2])).join(", ")}</div>`:`<p class="nota">Campos obrigatórios completos. Pode concluir, ou completar outros campos na ficha (apreensões, identificação, amostras…).</p>`}
     <div class="lista">${linhas.map(([t,val,k])=>`<div class="item" data-ir="${k}"><div><small>${esc(t)}</small><br><b>${esc(val)||'<span class="erro">em falta</span>'}</b></div><span>✎</span></div>`).join("")}</div>`; }
 async function concluirFOF(){ const E=UI.fof, D=E.dados; if(E.modo==="ficha"&&document.getElementById("fp-pag")) lerPapelFOF();
   const er=validarFOF(D); if(er.length){ alert("Falta preencher: "+er.map(x=>x[2]).join(", ")+"."); E.modo="form"; E.passo=passoDe(er[0][0]); return inicio(); }
