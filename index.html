@@ -58,6 +58,13 @@ header .zoom button{font-size:14px}
 .aviso-uo{background:#e8f1fb;border:1px solid #9cc0e8;border-radius:10px;padding:10px;margin:8px 0;font-weight:600;color:#123b66}
 .hoje-box{background:#fff;border:2px solid #9bb37a;border-radius:10px;padding:6px 10px;margin:8px 0}.dia{display:flex;gap:12px;padding:10px;background:#fff;border:1px solid var(--borda);border-radius:10px;margin:8px 0}.hoje-box .dia{border:0;padding:4px 0;margin:0}
 .dia.hoje{border:2px solid var(--marca)}.dia-d{min-width:62px;text-align:center;color:var(--marca)}h3.sec{margin:16px 0 4px;font-size:15px;display:flex;gap:8px;align-items:center}
+
+/* painel do inspetor */
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0}.kpi{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:10px 12px;border-radius:10px;background:#fff;border:1px solid var(--borda);min-height:72px}
+.kpi .v{font-size:26px;font-weight:700;color:#1c2418;line-height:1.1}.kpi .l{font-size:12.5px;color:#5c6656;margin-top:3px}.kpi.aviso{border-color:#e0b04a;background:#fffaf0}.kpi.aviso .v{color:#7a5a00}.kpi.mau{border-color:#e7a1a1;background:#fdf1f1}.kpi.mau .v{color:#c62828}
+.kpis.k4{grid-template-columns:repeat(4,1fr)}.kpis.k4 .kpi{min-height:0;padding:8px}.kpis.k4 .v{font-size:21px}.kpis.k4 .l{font-size:11.5px}
+.atencao{background:#fff;border:2px solid #e7a1a1;border-radius:10px;padding:4px 10px 10px;margin:10px 0}.at{display:block;width:100%;text-align:left;margin-top:6px;padding:9px 10px;font-size:14px;border-radius:8px}.at.mau{background:#fdecea;border-color:#e7a1a1;color:#8e1c1c;font-weight:600}.at.aviso{background:#fff4d6;border-color:#e0b04a;color:#5c4300}
+.tag.mau{background:#fde0e0;color:#a32020}
 </style></head><body><div id="app"></div><div id="toast"></div>
 <script>!function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"function"==typeof define&&define.amd?define(["exports"],e):e((t=t||self).PDFLib={})}(this,(function(t){"use strict";
 /*! *****************************************************************************
@@ -487,18 +494,20 @@ function ecraLista(){ const L=fichas();
   const est=f=>f.rejeitada&&!f.enviada?`<span class="tag mau">Rejeitada</span>`:f.validada?`<span class="tag ok">Validada ✓</span>`:f.recebida?`<span class="tag ok">Recebida na UO</span>`:f.enviada?`<span class="tag aviso">Enviada</span>`:f.dados.estado==="concluida"?`<span class="tag aviso">${temCaixa()?"Na fila":"Por enviar"}</span>`:`<span class="tag">Rascunho</span>`;
   $app.innerHTML=topo(esc(cfg.nome)+" · "+esc(cfg.cartao))+`<main class="m">
     ${((MOVEL&&MOVEL.av)||[]).map(a=>`<div class="aviso-uo">📢 ${esc(a.texto)}${a.ate?` <span class="nota">(até ${fmtData(a.ate)})</span>`:""}</div>`).join("")}
-    ${(()=>{ const d=meusDias()[0]; return d&&d.d===hojeISO()?`<div class="hoje-box">${linhaDia(d)}</div>`:""; })()}
-    <button class="prim grande" id="l-nova">＋ Nova FOF</button>
-    <div class="menu-g"><button id="l-plan">📅 O meu planeamento</button><button id="l-pend">⏳ Pendentes${nPend()?` <span class="tag aviso">${nPend()}</span>`:""}</button><button id="l-hist">🔎 Operador já fiscalizado?</button></div>
+    <button class="prim grande" id="l-nova">＋ Registar FOF</button>
+    ${(()=>{ const d=meusDias()[0]; return d&&d.d===hojeISO()?`<div class="hoje-box">${linhaDia(d)}</div>`:`<div class="hoje-box"><div class="nota" style="padding:6px 0">Hoje: sem serviço planeado${PLANO?"":" (abra a app com rede para receber o planeamento)"}.</div></div>`; })()}
     ${(()=>{ const h=hojeISO(), H=L.filter(f=>f.dados.data===h&&f.dados.estado==="concluida"), c=k=>H.filter(f=>(f.dados.resultado||[]).includes(k)).length; return `<div class="resumo-dia"><b>Hoje</b> — ${H.length} FOF concluída(s) · S/I ${c("SI")} · CO ${c("CO")} · CR ${c("CR")}${H.length?` · ${H.filter(f=>f.recebida).length} recebida(s) na UO`:""}</div>`; })()}
+    ${painelHTML(L)}
     ${cfg.envioRecusado?`<div class="aviso-box" style="background:#fde8e8;border-color:#e7a1a1"><b>Envio recusado pelo servidor</b> (${esc(String(cfg.envioRecusado.estado))}). Contacte a Chefia (o token pode ter expirado). Entretanto, use <b>📧 Enviar FOF do dia por e-mail</b>.</div>`:""}
     ${L.some(f=>f.enviada&&!f.recebida&&f.enviadaEm&&Date.now()-Date.parse(f.enviadaEm)>24*3600000)?`<div class="aviso-box">Há FOF enviadas há mais de 24 h sem confirmação de receção na UO. <button id="l-reenv" style="margin-top:6px">Reenviar</button></div>`:""}
     ${L.some(f=>f.rejeitada&&!f.enviada)?`<div class="aviso-box" style="background:#fde8e8;border-color:#e7a1a1">FOF rejeitadas pelo NATA: abra-as, corrija e conclua de novo.</div>`:""}
     ${L.some(f=>f.dados.estado==="concluida"&&!f.enviada)?`<div class="aviso-box">${temCaixa()?`Há FOF na fila (sem rede). São enviadas sozinhas quando houver ligação. <button id="l-env" style="margin-top:6px">Enviar agora</button>`:"Há FOF concluídas por enviar. Abra-as e carregue em <b>Enviar</b>."}</div>`:""}
+    <h3 class="sec">📱 As minhas FOF neste telemóvel <span class="tag">${L.length}</span></h3>
     <div class="lista">${L.map(f=>`<div class="item" data-id="${esc(f.id)}"><div><b>${esc(foOperador(f.dados)||"(sem operador)")}</b><br><small>${fmtData(f.dados.data)} ${esc(f.dados.hora||"")}${f.dados.nif?" · NIF "+esc(f.dados.nif):""}</small>${f.rejeitada&&!f.enviada?`<br><small class="erro">Motivo: ${esc(f.rejeitada.motivo)}</small>`:""}</div>${est(f)}</div>`).join("")||`<p class="nota">Ainda não há FOF neste telemóvel.</p>`}</div>
     <div class="rodape"><button id="l-email">📧 Enviar FOF do dia por e-mail</button><button id="l-dados">⚙ Definições</button><button id="l-bloq">🔒 Bloquear</button>${L.some(f=>f.enviada)?`<button id="l-limpar">🧹 Retirar as enviadas</button>`:""}</div>
     <p class="nota">${temCaixa()?"Ao concluir, a FOF é enviada cifrada para a ComandASAE (só a UO VI a consegue abrir).":"As fichas ficam só neste telemóvel até serem enviadas para a pasta <b>FOF do telemóvel</b> da ComandASAE (OneDrive)."}</p></main>`;
-  document.getElementById("l-hist").onclick=ecraHistorico; document.getElementById("l-plan").onclick=ecraPlaneamento; document.getElementById("l-pend").onclick=ecraPendentes;
+  document.getElementById("l-hist").onclick=ecraHistorico; document.getElementById("l-plan").onclick=ecraPlaneamento; document.getElementById("l-pend").onclick=()=>ecraPendentes();
+  $app.querySelectorAll("[data-pend]").forEach(b=>b.onclick=()=>ecraPendentes(b.dataset.pend));
   document.getElementById("l-email").onclick=()=>enviarDiaEmail().catch(e=>alert("Erro: "+e.message));
   const lr=document.getElementById("l-reenv"); if(lr) lr.onclick=()=>{ for(const f of fichas().filter(f=>f.enviada&&!f.recebida&&f.enviadaEm&&Date.now()-Date.parse(f.enviadaEm)>24*3600000)){ f.enviada=false; guardarFicha(f); } enviarPendentes(false); };
   const le=document.getElementById("l-env"); if(le) le.onclick=()=>{ if(!navigator.onLine) return toast("Sem rede."); enviarPendentes(false); };
@@ -510,6 +519,28 @@ function ecraLista(){ const L=fichas();
   const lp=document.getElementById("l-limpar"); if(lp) lp.onclick=()=>{ if(!confirm("Retirar deste telemóvel as FOF já enviadas?")) return; for(const f of fichas().filter(f=>f.enviada)) for(const x of (f.dados.fotos||[])) fotoApagar(f.id+":"+x.n); guardarLista(fichas().filter(f=>!f.enviada)); inicio(); };
   $app.querySelectorAll(".item").forEach(e=>e.onclick=()=>{ const f=fichas().find(x=>x.id===e.dataset.id); const D=JSON.parse(JSON.stringify(f.dados));
     const falta=validarFOF(D).map(x=>x[0]); UI.fof={id:f.id,dados:D,enviada:f.enviada,modo:D.estado==="concluida"?"ficha":"form",passo:falta.length?passoDe(falta[0]):PASSOS.length-1}; inicio(); }); }
+
+// painel do inspetor (versão móvel do painel da ComandASAE): indicadores, Requer atenção, semana
+function painelHTML(L){ const p=meusPend()||{}, I=p.ind||null, n=k=>(p[k]||[]).length, rejT=L.filter(f=>f.rejeitada&&!f.enviada).length;
+  const kpi=(v,l,tom,alvo)=>`<button class="kpi ${tom||""}" ${alvo?`data-pend="${alvo}"`:""}><span class="v">${v}</span><span class="l">${esc(l)}</span></button>`;
+  const ent=p.entregar||[], entV=ent.filter(x=>x[3]!=null&&x[3]>90).length, presc=(I&&I.presc)||[], prescV=presc.filter(x=>x[3]<=30).length;
+  const at=[];
+  if(rejT) at.push(["mau",`${rejT} FOF rejeitada(s) pelo NATA — corrigir e concluir de novo`,"rejfof"]);
+  if(prescV) at.push(["mau",`${prescV} auto(s) CO prescreve(m) em 30 dias ou menos`,"presc"]);
+  if(entV) at.push(["mau",`${entV} auto(s) por entregar há mais de 90 dias`,"entregar"]);
+  if(n("rejeitados")) at.push(["aviso",`${n("rejeitados")} auto(s) devolvido(s) para alteração`,"rejeitados"]);
+  if(I&&I.fm&&I.fm.pv) at.push(["aviso",`${I.fm.pv} FOF do telemóvel à espera de validação do NATA`,""]);
+  if(n("fofValidar")) at.push(["aviso",`${n("fofValidar")} FOF com infração por validar na ComandASAE`,"fofValidar"]);
+  const sem=meusDias().filter(x=>x.d!==hojeISO()).slice(0,4);
+  return `${at.length?`<div class="atencao"><h3 class="sec" style="margin-top:4px">⚠ Requer atenção</h3>${at.map(a=>`<button class="at ${a[0]}" ${a[2]?`data-pend="${a[2]}"`:""}>${esc(a[1])}</button>`).join("")}</div>`:""}
+    <h3 class="sec">⏳ Os meus pendentes</h3>
+    <div class="kpis">${kpi(ent.length,"Autos por entregar",entV?"mau":ent.length?"aviso":"","entregar")}${kpi(n("fofValidar"),"FOF com infração por validar",n("fofValidar")?"aviso":"","fofValidar")}
+      ${kpi(n("apreensoes")+n("suspensoes"),"Apreensões e suspensões por levantar",n("apreensoes")+n("suspensoes")?"aviso":"","apreensoes")}${kpi(presc.length,"Prescrição próxima (90 dias)",prescV?"mau":presc.length?"aviso":"","presc")}</div>
+    ${I?`<h3 class="sec">📊 A minha atividade ${esc(I.ano)}</h3><div class="kpis k4">${kpi(I.co,"Autos CO")}${kpi(I.cr,"Autos CR")}${kpi(I.adv,"Advertências")}${kpi(I.fof,"FOF com infração")}</div>
+      ${I.fm&&I.fm.env?`<div class="nota" style="margin:6px 2px">FOF enviadas pelo telemóvel: ${I.fm.env} · validadas ${I.fm.val} · por validar ${I.fm.pv} · rejeitadas ${I.fm.rej}</div>`:""}`:`<p class="nota">Os indicadores aparecem quando a ComandASAE os publicar (abra a app com rede).</p>`}
+    <h3 class="sec">📅 Próximos serviços</h3>${sem.map(linhaDia).join("")||`<p class="nota">Sem serviços planeados nos próximos dias.</p>`}
+    <div class="menu-g"><button id="l-plan">📅 Planeamento</button><button id="l-pend">⏳ Pendentes${nPend()?` <span class="tag aviso">${nPend()}</span>`:""}</button><button id="l-hist">🔎 Operador já fiscalizado?</button></div>
+    ${MOVEL&&MOVEL.em?`<p class="nota">Dados da ComandASAE de ${fmtDH2(MOVEL.em)}.</p>`:""}`; }
 
 // FOF nova: dados do inspetor, data e hora; a brigada e o NUF da última FOF deste dia no telemóvel
 // planeamento das brigadas (publicado cifrado pela ComandASAE no repositório da caixa; fica guardado no telemóvel para usar sem rede)
@@ -560,18 +591,20 @@ function ecraPlaneamento(){ UI.ecra="plan"; const L=meusDias();
   $app.innerHTML=topo(esc(cfg.nome))+`<main class="m"><div style="display:flex;gap:8px;align-items:center"><button id="x-v">◂</button><h2 style="margin:0">📅 O meu planeamento</h2></div>
     <p class="nota">${PLANO&&PLANO.em?"Planeamento de "+fmtDH2(PLANO.em)+".":"Ainda sem planeamento: abra a app com rede."}</p>${L.map(linhaDia).join("")||`<p class="nota">Sem serviços planeados nos próximos dias.</p>`}</main>`;
   document.getElementById("x-v").onclick=()=>{ UI.ecra=null; inicio(); }; }
-function ecraPendentes(){ UI.ecra="pend"; const p=meusPend()||{}, rejL=fichas().filter(f=>f.rejeitada&&!f.enviada);
-  const sec=(t,l,cab,f)=>`<h3 class="sec">${t} <span class="tag ${l.length?"aviso":"ok"}">${l.length}</span></h3>${l.length?`<div class="lista">${l.map(f).join("")}</div>`:""}`;
+function ecraPendentes(foco){ UI.ecra="pend"; const p=meusPend()||{}, rejL=fichas().filter(f=>f.rejeitada&&!f.enviada);
+  const sec=(t,l,id,f)=>`<h3 class="sec" id="pd-${id||""}">${t} <span class="tag ${l.length?"aviso":"ok"}">${l.length}</span></h3>${l.length?`<div class="lista">${l.map(f).join("")}</div>`:""}`;
   const it=(a,b,c)=>`<div class="item"><div><b>${esc(a)}</b><br><small>${b}</small></div>${c||""}</div>`;
   $app.innerHTML=topo(esc(cfg.nome))+`<main class="m"><div style="display:flex;gap:8px;align-items:center"><button id="x-v">◂</button><h2 style="margin:0">⏳ Os meus pendentes</h2></div>
     <p class="nota">${MOVEL&&MOVEL.em?"Dados da ComandASAE de "+fmtDH2(MOVEL.em)+".":"Ainda sem dados: abra a app com rede."}</p>
-    ${sec("FOF rejeitadas pelo NATA",rejL,0,f=>it(foOperador(f.dados)||"(sem operador)",fmtData(f.dados.data)+" · "+esc(f.rejeitada.motivo),`<span class="tag mau">Corrigir</span>`))}
-    ${sec("Autos por entregar",p.entregar||[],0,x=>it(x[1],esc(x[0])+" · "+fmtData(x[2]),x[3]!=null?`<span class="tag ${x[3]>90?"mau":"aviso"}">${x[3]} dias</span>`:""))}
-    ${sec("Autos rejeitados para alteração",p.rejeitados||[],0,x=>it(x[1],esc(x[0])+" · "+esc(x[2])+(x[3]?" ("+esc(x[3])+")":"")))}
-    ${sec("FOF com infração por validar (na ComandASAE)",p.fofValidar||[],0,x=>it(x[1],esc(x[0])+" · "+fmtData(x[2])))}
-    ${sec("Apreensões por levantar (fiel depositário: operador)",p.apreensoes||[],0,x=>it(x[1],esc(x[0])+" · "+fmtData(x[2]),x[3]!=null?`<span class="tag ${x[3]>30?"mau":"aviso"}">${x[3]} dias</span>`:""))}
-    ${sec("Suspensões por levantar",p.suspensoes||[],0,x=>it(x[1],esc(x[0])+" · "+fmtData(x[2])))}
+    ${sec("FOF rejeitadas pelo NATA",rejL,"rejfof",f=>it(foOperador(f.dados)||"(sem operador)",fmtData(f.dados.data)+" · "+esc(f.rejeitada.motivo),`<span class="tag mau">Corrigir</span>`))}
+    ${sec("Autos por entregar",p.entregar||[],"entregar",x=>it(x[1],esc(x[0])+" · "+fmtData(x[2]),x[3]!=null?`<span class="tag ${x[3]>90?"mau":"aviso"}">${x[3]} dias</span>`:""))}
+    ${sec("Autos rejeitados para alteração",p.rejeitados||[],"rejeitados",x=>it(x[1],esc(x[0])+" · "+esc(x[2])+(x[3]?" ("+esc(x[3])+")":"")))}
+    ${sec("FOF com infração por validar (na ComandASAE)",p.fofValidar||[],"fofValidar",x=>it(x[1],esc(x[0])+" · "+fmtData(x[2])))}
+    ${sec("Apreensões por levantar (fiel depositário: operador)",p.apreensoes||[],"apreensoes",x=>it(x[1],esc(x[0])+" · "+fmtData(x[2]),x[3]!=null?`<span class="tag ${x[3]>30?"mau":"aviso"}">${x[3]} dias</span>`:""))}
+    ${sec("Suspensões por levantar",p.suspensoes||[],"suspensoes",x=>it(x[1],esc(x[0])+" · "+fmtData(x[2])))}
+    ${sec("Prescrição próxima (autos CO, 90 dias)",(p.ind&&p.ind.presc)||[],"presc",x=>it(x[0],(x[1]?"NUICO "+esc(x[1])+" · ":"")+"prescreve a "+fmtData(x[2]),`<span class="tag ${x[3]<=30?"mau":"aviso"}">${x[3]<0?"prescrito":x[3]+" dias"}</span>`))}
     <p class="nota">A resolução faz-se na ComandASAE (PC).</p></main>`;
+  if(foco){ const e=document.getElementById("pd-"+foco); if(e&&e.scrollIntoView) setTimeout(()=>e.scrollIntoView({block:"start"}),30); }
   document.getElementById("x-v").onclick=()=>{ UI.ecra=null; inicio(); };
   $app.querySelectorAll(".item").forEach((e,i)=>{ if(i<rejL.length) e.onclick=()=>{ const f=rejL[i]; UI.ecra=null; const D=JSON.parse(JSON.stringify(f.dados)); const falta=validarFOF(D).map(x=>x[0]); UI.fof={id:f.id,dados:D,enviada:false,modo:"form",passo:falta.length?passoDe(falta[0]):PASSOS.length-1}; inicio(); }; }); }
 // histórico de fiscalizações dos operadores (publicado cifrado pela ComandASAE; guardado no telemóvel para pesquisar sem rede)
