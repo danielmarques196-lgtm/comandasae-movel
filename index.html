@@ -65,6 +65,7 @@ header .zoom button{font-size:14px}
 .kpis.k4{grid-template-columns:repeat(4,1fr)}.kpis.k4 .kpi{min-height:0;padding:8px}.kpis.k4 .v{font-size:21px}.kpis.k4 .l{font-size:11.5px}
 .atencao{background:#fff;border:2px solid #e7a1a1;border-radius:10px;padding:4px 10px 10px;margin:10px 0}.at{display:block;width:100%;text-align:left;margin-top:6px;padding:9px 10px;font-size:14px;border-radius:8px}.at.mau{background:#fdecea;border-color:#e7a1a1;color:#8e1c1c;font-weight:600}.at.aviso{background:#fff4d6;border-color:#e0b04a;color:#5c4300}
 .tag.mau{background:#fde0e0;color:#a32020}
+.w-addf{display:grid;grid-template-columns:1fr 1fr;gap:8px}.w-addf .w-addfoto{padding:14px 6px;font-size:14.5px}
 </style></head><body><div id="app"></div><div id="toast"></div>
 <script>!function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"function"==typeof define&&define.amd?define(["exports"],e):e((t=t||self).PDFLib={})}(this,(function(t){"use strict";
 /*! *****************************************************************************
@@ -708,6 +709,7 @@ function ecraFicha(){ const E=UI.fof, D=E.dados, pode=D.estado!=="concluida";
 }
 /* ---------- Formulário passo a passo (campos obrigatórios, pela ordem da ficha); a ficha pode ser vista e editada a qualquer momento ---------- */
 const OE_OP=["Prod. 1.ª","Indústria","Grossista","Armazenista","Embalador","Transportador","Imp./Dist","Restauração e Bebidas","Retalhista","P. Serv."];
+const MAX_FOTOS=20;
 const PASSOS=[
  {id:"acao",t:"Ação",campos:[{k:"modalidade",t:"um",op:["Físico","E-commerce"],l:"Fiscalização"},{k:"gps",t:"gps",l:"Localização"},{k:"data",t:"date",l:"Data"},{k:"hora",t:"time",l:"Hora de início"},{k:"nufTipo",t:"um",op:["PL","NP"],l:"NUF"},{k:"nuf",l:"N.º",ph:"116/26",im:"text"}]},
  {id:"brig",t:"Brigada",campos:[{k:"brigada",t:"brig",l:"N.º de cartão dos inspetores"}]},
@@ -719,7 +721,7 @@ const PASSOS=[
  {id:"activ",t:"Atividade",campos:[{k:"tipoActiv",l:"Tipo de atividade"}]},
  {id:"res",t:"Resultado",campos:[{k:"resultado",t:"multi",op:["SI","CR","CO"],rot:{SI:"S/I — sem infração",CR:"CR — crime",CO:"CO — contraordenação"},l:"Resultado da ação"}]},
  {id:"inf",t:"Infrações",se:D=>(D.resultado||[]).some(x=>x!=="SI"),campos:[{k:"infracoes",t:"area",l:"Infrações",linhas:5}]},
- {id:"fotos",t:"Fotografias (opcional)",campos:[{k:"fotos",t:"fotos",l:"Fotografias do local, documentos, rótulos… (até 10)"}]},
+ {id:"fotos",t:"Fotografias (opcional)",campos:[{k:"fotos",t:"fotos",l:"Fotografias do local, documentos, rótulos… (até 20)"}]},
  {id:"fim",t:"Revisão"}];
 const passoDe=k=>{ const i=PASSOS.findIndex(p=>(p.campos||[]).some(c=>c.k===k)); return i<0?0:i; };
 const passoAtivo=(p,D)=>!p.se||p.se(D);
@@ -730,7 +732,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
     if(c.t==="gps"){ if(D.modalidade==="E-commerce") return `<div class="w-campo"><label>${esc(c.l)}</label><p class="nota">Não se aplica (e-commerce).</p></div>`;
       return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-gps">${D.gps?`📍 ${D.gps.lat}, ${D.gps.lon} <span class="nota">(±${D.gps.prec} m)</span>`:`<span class="nota">Sem localização.</span>`} <button type="button" id="w-gps">📍 ${D.gps?"Atualizar":"Obter"}</button></div></div>`; }
     if(c.t==="fotos"){ const F=D.fotos||[]; return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-fotos">${F.map(x=>`<div class="w-foto" data-n="${x.n}"><img alt=""><button type="button" data-rmf="${x.n}">✕</button></div>`).join("")}</div>
-      ${F.length<10?`<label class="w-addfoto">📷 Tirar / escolher fotografia<input id="w-foto-in" type="file" accept="image/*" capture="environment" multiple hidden></label>`:""}</div>`; }
+      ${F.length<MAX_FOTOS?`<div class="w-addf"><label class="w-addfoto">📷 Tirar fotografia<input class="w-foto-in" type="file" accept="image/*" capture="environment" hidden></label><label class="w-addfoto">🖼 Escolher da galeria<input class="w-foto-in" type="file" accept="image/*" multiple hidden></label></div>`:""}<p class="nota">${F.length} de ${MAX_FOTOS} · seguem com a FOF num PDF "Reportagem fotográfica".</p></div>`; }
     if(c.t==="brig"){ const b=Array.isArray(v)?v:[]; return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-brig">${[0,1,2,3,4].map(j=>`<input inputmode="numeric" data-b="${j}" value="${esc(b[j]||"")}" placeholder="${j===0?"o seu":""}">`).join("")}</div></div>`; }
     if(c.t==="area") return `<div class="w-campo"><label>${esc(c.l)}</label><textarea data-k="${c.k}" rows="${c.linhas||3}">${esc(v||"")}</textarea></div>`;
     const val=c.t==="date"?(v||""):v||""; return `<div class="w-campo"><label>${esc(c.l)}</label><input data-k="${c.k}" type="${c.t==="date"?"date":c.t==="time"?"time":"text"}" ${c.im?`inputmode="${c.im}"`:""} ${c.max?`maxlength="${c.max}"`:""} ${c.lista?`list="${c.lista}"`:""} ${c.ph?`placeholder="${esc(c.ph)}"`:""} enterkeyhint="next" value="${esc(val)}" autocomplete="off"></div>`; };
@@ -765,8 +767,8 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
   const bg=document.getElementById("w-gps"); if(bg) bg.onclick=()=>{ bg.disabled=true; bg.textContent="A obter…"; ler(); obterGPS(D,()=>ecraForm()); };
   $app.querySelectorAll(".w-foto").forEach(async el=>{ try{ const b=await fotoLer(E.id+":"+el.dataset.n); if(b) el.querySelector("img").src=URL.createObjectURL(b); }catch(e){} });
   $app.querySelectorAll("[data-rmf]").forEach(b=>b.onclick=async()=>{ ler(); const n=+b.dataset.rmf; await fotoApagar(E.id+":"+n); D.fotos=(D.fotos||[]).filter(x=>x.n!==n); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); });
-  const fin=document.getElementById("w-foto-in"); if(fin) fin.onchange=async()=>{ ler(); D.fotos=D.fotos||[]; for(const f of [...fin.files].slice(0,10-D.fotos.length)){ try{ const b=await reduzirFoto(f); const n=(D.fotos.reduce((m,x)=>Math.max(m,x.n),0))+1; await fotoGuardar(E.id+":"+n,b); D.fotos.push({n,nome:"foto-"+n+".jpg",tam:b.size}); }catch(e){ alert("Fotografia não guardada: "+e.message); } }
-    guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); };
+  document.querySelectorAll(".w-foto-in").forEach(fin=>fin.onchange=async()=>{ ler(); D.fotos=D.fotos||[]; if(fin.files.length>MAX_FOTOS-D.fotos.length) alert("Máximo de "+MAX_FOTOS+" fotografias por FOF: só ficam as primeiras "+(MAX_FOTOS-D.fotos.length)+"."); for(const f of [...fin.files].slice(0,MAX_FOTOS-D.fotos.length)){ try{ const b=await reduzirFoto(f); const n=(D.fotos.reduce((m,x)=>Math.max(m,x.n),0))+1; await fotoGuardar(E.id+":"+n,b); D.fotos.push({n,nome:"foto-"+n+".jpg",tam:b.size}); }catch(e){ alert("Fotografia não guardada: "+e.message); } }
+    guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); });
   const f1=ins.find(e=>!e.value)||ins[0]; if(f1 && !("ontouchstart" in window && P.id==="fim")) setTimeout(()=>f1.focus(),150);
   $app.querySelectorAll(".w-passos [data-p]").forEach(b=>b.onclick=()=>ir(+b.dataset.p));
   $app.querySelectorAll("[data-ir]").forEach(b=>b.onclick=()=>ir(passoDe(b.dataset.ir)));
@@ -777,7 +779,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
   const cc=document.getElementById("w-concluir"); if(cc) cc.onclick=concluirFOF;
   document.getElementById("w-sair").onclick=()=>{ ler(); UI.fof=null; inicio(); }; }
 async function reduzirFoto(file){ const url=URL.createObjectURL(file); try{ const img=await new Promise((ok,ko)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=()=>ko(new Error("imagem inválida")); i.src=url; });
-    const k=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight)), cv=document.createElement("canvas"); cv.width=Math.round(img.naturalWidth*k); cv.height=Math.round(img.naturalHeight*k); cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+    const k=Math.min(1,1400/Math.max(img.naturalWidth,img.naturalHeight)), cv=document.createElement("canvas"); cv.width=Math.round(img.naturalWidth*k); cv.height=Math.round(img.naturalHeight*k); cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
     return await new Promise(ok=>cv.toBlob(ok,"image/jpeg",0.72)); } finally{ URL.revokeObjectURL(url); } }
 function revisaoHTML(D,erros){ const v=k=>{ const x=D[k]; return Array.isArray(x)?x.join(", "):(k==="data"?fmtData(x):x)||""; };
   const linhas=[["Data / hora",fmtData(D.data)+" "+(D.hora||""),"data"],["NUF",[D.nufTipo,D.nuf].filter(Boolean).join("/"),"nuf"],["Brigada",(D.brigada||[]).filter(Boolean).join(" · "),"brigada"],["NIF",v("nif"),"nif"],["Operador",v("desig"),"desig"],
