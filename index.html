@@ -631,15 +631,16 @@ async function atualizarHistorico(){ if(!cfg||!cfg.gh||!cfg.pk||!navigator.onLin
 async function lerHistGuardado(){ HIST=null; const o=ler(HIST_K(),null); if(!o||!o.c||!cfg||!cfg.pk) return; try{ const k=await crypto.subtle.importKey("raw",deB64(cfg.pk),"AES-GCM",false,["decrypt"]); HIST=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:deB64(o.iv)},k,deB64(o.c)))); }catch(e){} }
 function pesquisarHist(q){ if(!HIST||!Array.isArray(HIST.r)) return []; q=String(q||"").trim(); const dig=q.replace(/\D/g,""), t=normTxt(q);
   if(/^\d+$/.test(q.replace(/\s/g,""))) return dig.length>=3?HIST.r.filter(x=>x.n&&x.n.startsWith(dig)).slice(0,40):[];
-  if(t.length<3) return []; return HIST.r.filter(x=>[...(x.d||[]),...(x.e||[])].some(n=>normTxt(n).includes(t))).slice(0,40); }
+  if(t.length<3) return []; return HIST.r.filter(x=>[...(x.d||[]),...(x.e||[]),(x.o&&x.o.m)||""].some(n=>n&&normTxt(n).includes(t))).slice(0,40); }
 function histHTML(x){ const ult=(x.h||[])[0]; return `<div class="hist"><b>${esc((x.d||[])[0]||(x.e||[])[0]||"(sem nome)")}</b>${x.n?` <span class="nota">NIF ${esc(x.n)}</span>`:""}
   ${(x.e||[]).length?`<div class="nota">Estabelecimento: ${esc(x.e.join("; "))}</div>`:""}<div class="nota">${(x.h||[]).length} registo(s)${ult?` · último ${fmtData(ult[0])}`:""}</div>
   <table class="hist-t">${(x.h||[]).map(h=>`<tr><td>${fmtData(h[0])}</td><td><b>${esc(h[1])}</b></td><td class="${/infra|CO|CR/i.test(h[2])&&!/sem/i.test(h[2])?"erro":""}">${esc(h[2])}</td><td>${esc(h[3]||"")}${h[4]?` <span class="nota">(${esc(h[4])})</span>`:""}</td></tr>`).join("")}</table></div>`; }
 function ecraHistorico(){ $app.innerHTML=topo(esc(cfg.nome))+`<main class="m"><div style="display:flex;gap:8px;align-items:center"><button id="h-v">◂</button><h2 style="margin:0">Operador já fiscalizado?</h2></div>
-    <p class="nota">Pesquise por NIF, designação social ou nome do estabelecimento. ${HIST&&HIST.em?"Dados de "+fmtDH2(HIST.em)+".":"Ainda sem dados: abra com rede."}</p>
+    <p class="nota">Pesquise por NIF, designação social, nome do estabelecimento ou morada — ou procure os operadores perto de si ou de uma morada/coordenadas. ${HIST&&HIST.em?"Dados de "+fmtDH2(HIST.em)+".":"Ainda sem dados: abra com rede."}</p>
     <input id="h-q" type="search" placeholder="NIF ou nome…" autocomplete="off" style="width:100%;font-size:18px;padding:12px;border:1px solid var(--borda);border-radius:10px">
-    <div id="h-r" style="margin-top:12px"></div></main>`;
+    <div id="h-r" style="margin-top:12px"></div><div id="h-prox" style="margin-top:12px"></div><div id="h-px1"></div></main>`;
   const q=document.getElementById("h-q"), r=document.getElementById("h-r");
+  painelProximos(document.getElementById("h-prox"),{mapa:false,escolher:x=>{ const d=document.getElementById("h-px1"); d.innerHTML=x.fonte==="uo"?`<p class="nota" style="margin-top:10px">A ${fmtDist(x.d)}:</p>`+histHTML(x.h):`<div class="aviso-box">${esc(x.nome)} — FOF neste telemóvel de ${fmtData(x.data)} (ainda não consta do histórico da UO).</div>`; if(d.scrollIntoView) d.scrollIntoView({block:"start"}); }});
   const mostrar=()=>{ const L=pesquisarHist(q.value); r.innerHTML=L.length?L.map(histHTML).join(""):(q.value.trim().length>=3?`<div class="aviso-box">Sem fiscalizações registadas para "${esc(q.value.trim())}".</div>`:""); };
   q.oninput=mostrar; q.focus(); document.getElementById("h-v").onclick=()=>{ UI.ecra=null; inicio(); }; }
 const fmtDH2=iso=>{ const d=new Date(iso); return isNaN(d)?"":d.toLocaleDateString("pt-PT")+" "+d.toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"}); };
@@ -749,6 +750,69 @@ function sugerirMorada(E,D,ler){ const box=document.getElementById("w-geo"); if(
       <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="prim" id="w-geo-sim">Usar esta morada</button><button type="button" id="w-geo-nao">Não usar</button></div></div>`;
     document.getElementById("w-geo-sim").onclick=()=>{ if(ler) ler(); for(const k of dif) D[k]=o[k]; guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); E.geoNao=true; ecraForm(); toast("Morada preenchida pela localização. Confirme os campos."); };
     document.getElementById("w-geo-nao").onclick=()=>{ E.geoNao=true; box.innerHTML=""; }; }).catch(()=>{ box.innerHTML=""; }); }
+// ---- operadores nas proximidades (pré-preenchimento da FOF e pesquisa "Operador já fiscalizado?") ----
+// fontes: histórico da UO (com localização publicada pela ComandASAE), FOF deste telemóvel com GPS e, com rede, estabelecimentos do mapa (OpenStreetMap)
+const distM=(a,b)=>{ const R=6371000, r=x=>x*Math.PI/180, dl=r(b.lat-a.lat), dn=r(b.lon-a.lon), s=Math.sin(dl/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dn/2)**2; return 2*R*Math.asin(Math.min(1,Math.sqrt(s))); };
+const fmtDist=m=>m<1000?Math.round(m)+" m":(m/1000).toFixed(m<10000?1:0).replace(".",",")+" km";
+function lerCoord(q){ const m=String(q||"").trim().match(/^(-?\d{1,2}[.,]\d+)\s*[,;\s]\s*(-?\d{1,3}[.,]\d+)$/); if(!m) return null; const la=+m[1].replace(",","."), lo=+m[2].replace(",","."); return Math.abs(la)<=90&&Math.abs(lo)<=180?{lat:la,lon:lo}:null; }
+async function geocodificar(q){ q=String(q||"").trim(); if(q.length<4) return null; const c=lerCoord(q); if(c) return Object.assign({rot:c.lat+", "+c.lon},c);
+  const k="fofm-gq-"+normTxt(q); const x=ler(k,null); if(x) return x; if(!navigator.onLine) return null;
+  try{ const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=pt&limit=1&accept-language=pt&q="+encodeURIComponent(q)); if(!r.ok) return null; const j=(await r.json())[0]; if(!j) return null;
+    const o={lat:+j.lat,lon:+j.lon,rot:j.display_name||q}; gravarLS(k,o); return o; }catch(e){ return null; } }
+// fiscalizados pela UO e FOF deste telemóvel, por distância
+function fiscalizadosPerto(p,raio,excluirId){ const out=[];
+  for(const x of (HIST&&HIST.r)||[]) if(Array.isArray(x.p)&&x.p.length===2){ const d=distM(p,{lat:+x.p[0],lon:+x.p[1]}); if(d<=raio) out.push({fonte:"uo",d,h:x,nome:(x.d||[])[0]||(x.e||[])[0]||"",estab:(x.e||[])[0]||"",nif:x.n||"",o:x.o||{}}); }
+  for(const f of fichas()){ const D=f.dados||{}; if(f.id===excluirId||!D.gps||!(D.desig||D.estab)) continue; const d=distM(p,D.gps); if(d>raio) continue;
+    if(D.nif&&out.some(y=>y.nif===D.nif)) continue; out.push({fonte:"tel",d,nome:D.desig||D.estab,estab:D.estab||"",nif:D.nif||"",o:{m:D.moradaEst,cp:D.cpEst,ds:D.distritoEst,cc:D.concelhoEst,fg:D.freguesiaEst},data:D.data}); }
+  return out.sort((a,b)=>a.d-b.d).slice(0,25); }
+// estabelecimentos com nome no mapa (OpenStreetMap / Overpass), num raio pequeno
+async function mapaPerto(p,raio){ const k="fofm-osm-"+p.lat.toFixed(4)+","+p.lon.toFixed(4)+","+raio, c=ler(k,null); if(c&&Date.now()-c.t<7*864e5) return c.L; if(!navigator.onLine) return [];
+  const q=`[out:json][timeout:12];nwr(around:${raio},${p.lat},${p.lon})[name][~"^(shop|amenity|craft|tourism|office|industrial|healthcare)$"~"."];out center tags 40;`;
+  try{ const r=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"data="+encodeURIComponent(q)}); if(!r.ok) return [];
+    const L=((await r.json()).elements||[]).map(e=>{ const t=e.tags||{}, la=e.lat??(e.center&&e.center.lat), lo=e.lon??(e.center&&e.center.lon); if(la==null) return null;
+      const cp=String(t["addr:postcode"]||"").replace(/\D/g,""); return {fonte:"osm",d:distM(p,{lat:la,lon:lo}),nome:t.name,estab:t.name,nif:"",tipo:t.shop||t.amenity||t.craft||t.tourism||t.office||t.industrial||t.healthcare||"",
+        o:{m:[t["addr:street"]||"",t["addr:housenumber"]||""].filter(Boolean).join(" "),cp:cp.length===7?cp.slice(0,4)+"-"+cp.slice(4):"",cc:t["addr:city"]||""}}; }).filter(Boolean).sort((a,b)=>a.d-b.d).slice(0,25);
+    gravarLS(k,{t:Date.now(),L}); return L; }catch(e){ return []; } }
+const TIPO_OSM={restaurant:"restaurante",cafe:"café",bar:"bar",pub:"bar",fast_food:"comida rápida",supermarket:"supermercado",convenience:"mercearia",butcher:"talho",bakery:"padaria",pastry:"pastelaria",pharmacy:"farmácia",fuel:"posto de combustível",hotel:"hotel",guest_house:"alojamento",clothes:"vestuário",hairdresser:"cabeleireiro",greengrocer:"frutaria",kiosk:"quiosque",beverages:"bebidas",wine:"vinhos",seafood:"peixaria",deli:"charcutaria",marketplace:"mercado",ice_cream:"gelataria"};
+// painel de pesquisa: aqui (GPS) ou morada/coordenadas; escolher(item) é chamado ao tocar num resultado
+function painelProximos(box,opt){ opt=opt||{}; const raioUO=opt.raio||1000;
+  box.innerHTML=`<div class="aviso-box" style="background:#eef5ea;border-color:#b9d3ad"><b>🔎 Operadores nas proximidades</b>
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button type="button" id="px-aqui">📍 Perto de mim (GPS)</button></div>
+    <div style="display:flex;gap:6px;margin-top:8px"><input id="px-q" type="search" placeholder="Morada ou coordenadas (40.28, -7.50)" autocomplete="off" style="flex:1;min-width:0"><button type="button" id="px-ir">Procurar</button></div>
+    <div id="px-r" style="margin-top:8px"></div></div>`;
+  const R=box.querySelector("#px-r"); let L=[];
+  const item=(x,i)=>`<button type="button" class="item" data-px="${i}" style="display:block;width:100%;text-align:left;margin:4px 0;padding:8px">
+      <b>${esc(x.nome||"(sem nome)")}</b> <span class="nota">· ${fmtDist(x.d)}</span>${x.nif?` <span class="nota">NIF ${esc(x.nif)}</span>`:""}
+      ${x.estab&&x.estab!==x.nome?`<div class="nota">${esc(x.estab)}</div>`:""}${x.o&&x.o.m?`<div class="nota">${esc([x.o.m,x.o.cp].filter(Boolean).join(", "))}</div>`:""}
+      ${x.fonte==="uo"?`<div class="nota">${(x.h.h||[]).length} registo(s) na UO · último ${fmtData(((x.h.h||[])[0]||[])[0])} (${esc(((x.h.h||[])[0]||[])[1]||"")}${((x.h.h||[])[0]||[])[2]?" — "+esc(x.h.h[0][2]):""})</div>`:x.fonte==="tel"?`<div class="nota">FOF neste telemóvel de ${fmtData(x.data)}</div>`:x.tipo?`<div class="nota">${esc(TIPO_OSM[x.tipo]||x.tipo.replace(/_/g," "))}</div>`:""}</button>`;
+  const mostrar=async(p,rot)=>{ R.innerHTML=`<p class="nota">A procurar perto de ${esc(rot)}…</p>`;
+    const A=fiscalizadosPerto(p,raioUO,opt.excluir), B=opt.mapa===false?[]:await mapaPerto(p,250);
+    const B2=B.filter(b=>!A.some(a=>normTxt(a.nome)===normTxt(b.nome)||(a.estab&&normTxt(a.estab)===normTxt(b.nome)))); L=[...A,...B2];
+    R.innerHTML=`<p class="nota">Perto de ${esc(rot)}:</p>`+(A.length?`<div class="nota"><b>Já fiscalizados (UO / este telemóvel)</b> — até ${fmtDist(raioUO)}</div>`+A.map((x,i)=>item(x,i)).join(""):`<p class="nota">Nenhum operador fiscalizado com localização conhecida até ${fmtDist(raioUO)}.</p>`)
+      +(opt.mapa===false?"":B2.length?`<div class="nota" style="margin-top:6px"><b>No mapa (OpenStreetMap)</b> — até 250 m</div>`+B2.map((x,j)=>item(x,A.length+j)).join(""):`<p class="nota">${navigator.onLine?"Sem estabelecimentos com nome no mapa até 250 m.":"Sem rede: não foi possível ver o mapa."}</p>`);
+    R.querySelectorAll("[data-px]").forEach(b=>b.onclick=()=>opt.escolher&&opt.escolher(L[+b.dataset.px],b)); };
+  box.querySelector("#px-aqui").onclick=e=>{ const b=e.target; const usar=g=>mostrar(g,"si ("+g.lat.toFixed(5)+", "+g.lon.toFixed(5)+")");
+    if(opt.gps&&opt.gps()&&Date.now()-Date.parse(opt.gps().em||0)<10*60000) return usar(opt.gps());
+    if(!navigator.geolocation){ R.innerHTML=`<p class="erro">Localização indisponível neste telemóvel.</p>`; return; } b.disabled=true; b.textContent="A obter…";
+    navigator.geolocation.getCurrentPosition(p=>{ b.disabled=false; b.textContent="📍 Perto de mim (GPS)"; const g={lat:+p.coords.latitude.toFixed(6),lon:+p.coords.longitude.toFixed(6),prec:Math.round(p.coords.accuracy),em:new Date().toISOString()}; if(opt.novoGps) opt.novoGps(g); usar(g); },
+      er=>{ b.disabled=false; b.textContent="📍 Perto de mim (GPS)"; R.innerHTML=`<p class="erro">Localização indisponível (${esc(er.message)}).</p>`; },{enableHighAccuracy:true,timeout:15000,maximumAge:60000}); };
+  const ir=async()=>{ const q=box.querySelector("#px-q").value.trim(); if(q.length<4){ R.innerHTML=`<p class="nota">Escreva a morada (rua, localidade) ou as coordenadas.</p>`; return; }
+    R.innerHTML=`<p class="nota">A localizar…</p>`; const g=await geocodificar(q); if(!g){ R.innerHTML=`<p class="erro">${navigator.onLine?"Morada não encontrada. Acrescente a localidade ou escreva as coordenadas.":"Sem rede: só é possível pesquisar por coordenadas."}</p>`; return; } mostrar(g,g.rot); };
+  box.querySelector("#px-ir").onclick=ir; box.querySelector("#px-q").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); ir(); } });
+  if(opt.auto&&opt.gps&&opt.gps()) mostrar(opt.gps(),"desta FOF"); }
+// na FOF (passos NIF e Operador): escolher → confirmar → preencher
+function proximosFOF(E,D,ler){ const box=document.getElementById("w-prox"); if(!box) return;
+  const abrir=()=>painelProximos(box,{excluir:E.id,gps:()=>D.gps,auto:!!D.gps,novoGps:g=>{ if(!D.gps){ D.gps=g; guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); } },escolher:x=>{
+    const NOM={nif:"NIF",desig:"Designação social",estab:"Estabelecimento",moradaEst:"Morada",cpEst:"Código postal",distritoEst:"Distrito",concelhoEst:"Concelho",freguesiaEst:"Freguesia"};
+    const o=x.o||{}, V={nif:x.nif,desig:x.fonte==="osm"?"":x.nome,estab:x.estab&&x.estab!==x.nome||x.fonte==="osm"?x.estab:"",moradaEst:o.m,cpEst:o.cp,distritoEst:FO_DISTRITOS.includes(o.ds)?o.ds:"",concelhoEst:o.cc,freguesiaEst:o.fg};
+    if(ler) ler(); const dif=Object.keys(V).filter(k=>V[k]&&String(V[k]).trim()!==String(D[k]||"").trim());
+    if(!dif.length){ toast("Os dados deste operador já estão na FOF."); return; }
+    box.innerHTML=`<div class="aviso-box"><b>Preencher com ${esc(x.nome)}</b> — confirme<br>${dif.map(k=>`${NOM[k]}: <b>${esc(V[k])}</b>${D[k]?` <span class="nota">(escrito: ${esc(D[k])})</span>`:""}`).join("<br>")}
+      ${x.fonte==="osm"?`<p class="nota">Dados do mapa (OpenStreetMap): confirme a designação social e o NIF com o operador.</p>`:""}
+      <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="prim" id="px-sim">Usar estes dados</button><button type="button" id="px-nao">Voltar à lista</button></div></div>`;
+    box.querySelector("#px-sim").onclick=()=>{ for(const k of dif) D[k]=String(V[k]).trim(); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); E.proxFeito=true; ecraForm(); toast("Dados do operador preenchidos. Confirme os campos."+(x.fonte==="uo"?" Já fiscalizado: "+(x.h.h||[]).length+" registo(s).":""),4000); };
+    box.querySelector("#px-nao").onclick=abrir; }});
+  box.innerHTML=`<button type="button" id="px-abrir" style="width:100%">🔎 Operadores nas proximidades — pré-preencher</button>`; box.querySelector("#px-abrir").onclick=abrir; }
 // inspetores para escolher na brigada (publicados com o planeamento; sem lista, os que aparecem no planeamento)
 function listaInspPlan(){ const m=new Map(); for(const i of (PLANO&&PLANO.ins)||[]) if(i&&i.c) m.set(String(i.c),String(i.n||""));
   if(!m.size) for(const x of (PLANO&&PLANO.r)||[]) for(const i of x.i||[]) if(i&&i.c) m.set(String(i.c),String(i.n||""));
@@ -791,7 +855,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
     <datalist id="fo-distritos">${FO_DISTRITOS.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
     <div class="w-passos">${vis.map(p=>{ const f=(p.campos||[]).some(c=>faltaK.has(c.k)); return `<button data-p="${PASSOS.indexOf(p)}" class="${p===P?"atual":""} ${p.id!=="fim"&&!f?"feito":""}" title="${esc(p.t)}">${p.id==="fim"?"✓":PASSOS.indexOf(p)+1}</button>`; }).join("")}</div>
     ${(()=>{ const f=fichas().find(x=>x.id===E.id); return f&&f.rejeitada&&!f.enviada?`<div class="aviso-box" style="margin:8px 12px 0;background:#fde8e8;border-color:#e7a1a1"><b>Rejeitada pelo NATA</b> (${esc(f.rejeitada.por||"")}): ${esc(f.rejeitada.motivo)}</div>`:""; })()}
-    <main class="m w">${P.id==="fim"?revisaoHTML(D,erros):`<h2>${esc(P.t)}</h2>${(P.id==="morada"||P.id==="local")&&D.modalidade!=="E-commerce"&&!E.geoNao?`<div id="w-geo"></div>`:""}<div id="w-info" class="nota"></div>${P.campos.map(campoHTML).join("")}<div id="w-erro" class="erro"></div>`}</main>
+    <main class="m w">${P.id==="fim"?revisaoHTML(D,erros):`<h2>${esc(P.t)}</h2>${(P.id==="morada"||P.id==="local")&&D.modalidade!=="E-commerce"&&!E.geoNao?`<div id="w-geo"></div>`:""}${(P.id==="nif"||P.id==="desig")&&D.modalidade!=="E-commerce"&&!E.proxFeito?`<div id="w-prox" style="margin:4px 0 12px"></div>`:""}<div id="w-info" class="nota"></div>${P.campos.map(campoHTML).join("")}<div id="w-erro" class="erro"></div>`}</main>
     <div class="barra-baixo"><button id="w-ant" ${n<=1?"disabled":""}>◂ Anterior</button>${P.id==="fim"?`<button id="w-ver-ficha">📄 Completar na FOF</button><button class="prim" id="w-concluir" ${erros.length?"disabled":""}>Concluir</button>`:`<button class="prim" id="w-seg">Seguinte ▸</button>`}</div>`;
   const ler=()=>{ $app.querySelectorAll("main [data-k]").forEach(e=>{ const k=e.dataset.k;
       if(e.classList.contains("w-chips")){ const on=[...e.querySelectorAll(".w-chip.on")].map(b=>b.dataset.v); D[k]=e.dataset.t==="multi"?on:(on[0]||""); }
@@ -825,7 +889,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
     $app.querySelectorAll("[data-brc]").forEach(e=>e.onclick=()=>brig(e.dataset.brc));
     $app.querySelectorAll("[data-brx]").forEach(e=>e.onclick=()=>{ ler(); const b=(D.brigada||[]).filter(Boolean); b.splice(+e.dataset.brx,1); D.brigada=b; guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); });
     const ba=document.getElementById("w-br-add"); if(ba) ba.onclick=()=>{ const i=document.getElementById("w-br-out"); brig(i&&i.value); }; }
-  sugerirMorada(E,D,ler);
+  sugerirMorada(E,D,ler); proximosFOF(E,D,ler);
   document.querySelectorAll(".w-foto-in").forEach(fin=>fin.addEventListener("click",()=>{ try{ ler(); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); }catch(e){} }));
   document.querySelectorAll(".w-foto-in").forEach(fin=>fin.onchange=async()=>{ ler(); D.fotos=D.fotos||[]; if(fin.files.length>MAX_FOTOS-D.fotos.length) alert("Máximo de "+MAX_FOTOS+" fotografias por FOF: só ficam as primeiras "+(MAX_FOTOS-D.fotos.length)+".");
     const L2=[...fin.files].slice(0,MAX_FOTOS-D.fotos.length), est=document.querySelector(".w-addf"), nota=est&&est.nextElementSibling; if(est) est.querySelectorAll("label").forEach(l=>{ l.style.pointerEvents="none"; l.style.opacity=".5"; });
