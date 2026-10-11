@@ -739,12 +739,15 @@ async function moradaInversa(lat,lon){ const cpFmt=p=>{ const d=String(p||"").re
 async function moradaPorGPS(g){ const k="fofm-geo2-"+g.lat.toFixed(5)+","+g.lon.toFixed(5); const c=ler(k,null); if(c) return c; if(!navigator.onLine) return null;
   const o=await moradaInversa(g.lat,g.lon); if(!o) return null; if(o.distritoEst&&!FO_DISTRITOS.includes(o.distritoEst)) o.distritoEst=""; delete o.localidade; delete o.fonte; gravarLS(k,o); return o; }
 function sugerirMorada(E,D,ler){ const box=document.getElementById("w-geo"); if(!box) return; const K=["moradaEst","cpEst","distritoEst","concelhoEst","freguesiaEst"];
-  if(K.every(k=>D[k])) return; box.innerHTML=`<p class="nota">📍 A procurar a morada pela localização…</p>`;
-  moradaPorGPS(D.gps).then(o=>{ if(!document.getElementById("w-geo")) return; const novos=o?K.filter(k=>o[k]&&!D[k]):[]; if(!novos.length){ box.innerHTML=""; return; }
-    const NOM={moradaEst:"Morada",cpEst:"Código postal",distritoEst:"Distrito",concelhoEst:"Concelho",freguesiaEst:"Freguesia"};
-    box.innerHTML=`<div class="aviso-box"><b>📍 Morada pela localização</b> (confirme antes de usar)<br>${novos.map(k=>`${NOM[k]}: <b>${esc(o[k])}</b>`).join("<br>")}
-      <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="prim" id="w-geo-sim">Usar</button><button type="button" id="w-geo-nao">Não usar</button></div></div>`;
-    document.getElementById("w-geo-sim").onclick=()=>{ if(ler) ler(); for(const k of novos) if(!D[k]) D[k]=o[k]; guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); };
+  const NOM={moradaEst:"Morada",cpEst:"Código postal",distritoEst:"Distrito",concelhoEst:"Concelho",freguesiaEst:"Freguesia"};
+  if(!D.gps){ box.innerHTML=`<div class="aviso-box">📍 Sem localização nesta FOF. <button type="button" id="w-geo-obter" style="margin-left:6px">Obter localização e morada</button></div>`;
+    document.getElementById("w-geo-obter").onclick=e=>{ e.target.disabled=true; e.target.textContent="A obter…"; if(ler) ler(); obterGPS(D,()=>{ guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); }); }; return; }
+  box.innerHTML=`<p class="nota">📍 A procurar a morada pela localização…</p>`;
+  moradaPorGPS(D.gps).then(o=>{ if(!document.getElementById("w-geo")) return; const dif=o?K.filter(k=>o[k]&&String(o[k]).trim()!==String(D[k]||"").trim()):[];
+    if(!dif.length){ box.innerHTML=o?`<p class="nota">📍 A morada coincide com a localização.</p>`:`<p class="nota">📍 Morada pela localização não encontrada${navigator.onLine?"":" (sem rede)"}.</p>`; return; }
+    box.innerHTML=`<div class="aviso-box"><b>📍 Morada pela localização</b> — confirme antes de usar<br>${dif.map(k=>`${NOM[k]}: <b>${esc(o[k])}</b>${D[k]?` <span class="nota">(escrito: ${esc(D[k])})</span>`:""}`).join("<br>")}
+      <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="prim" id="w-geo-sim">Usar esta morada</button><button type="button" id="w-geo-nao">Não usar</button></div></div>`;
+    document.getElementById("w-geo-sim").onclick=()=>{ if(ler) ler(); for(const k of dif) D[k]=o[k]; guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); E.geoNao=true; ecraForm(); toast("Morada preenchida pela localização. Confirme os campos."); };
     document.getElementById("w-geo-nao").onclick=()=>{ E.geoNao=true; box.innerHTML=""; }; }).catch(()=>{ box.innerHTML=""; }); }
 // inspetores para escolher na brigada (publicados com o planeamento; sem lista, os que aparecem no planeamento)
 function listaInspPlan(){ const m=new Map(); for(const i of (PLANO&&PLANO.ins)||[]) if(i&&i.c) m.set(String(i.c),String(i.n||""));
@@ -782,13 +785,13 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
         <div style="display:flex;gap:6px;margin-top:10px"><input id="w-br-out" inputmode="numeric" placeholder="Outro n.º de cartão" style="flex:1"><button type="button" id="w-br-add">Acrescentar</button></div>
         ${b.map((x,j)=>`<input type="hidden" data-b="${j}" value="${esc(x)}">`).join("")}</div>`; }
     if(c.t==="area") return `<div class="w-campo"><label>${esc(c.l)}</label><textarea data-k="${c.k}" rows="${c.linhas||3}">${esc(v||"")}</textarea>
-      <p class="nota">Dica: pode ler texto de um documento ou rótulo com a câmara (${ehIOS?"tocar no campo → <b>Digitalizar texto</b>":"teclado → <b>Digitalizar texto</b> / Google Lens"}).</p></div>`;
+      ${c.k==="infracoes"?`<p class="nota">Dica: pode ler texto de um documento ou rótulo com a câmara (${ehIOS?"tocar no campo → <b>Digitalizar texto</b>":"teclado → <b>Digitalizar texto</b> / Google Lens"}).</p>`:""}</div>`;
     const val=c.t==="date"?(v||""):v||""; return `<div class="w-campo"><label>${esc(c.l)}</label><input data-k="${c.k}" type="${c.t==="date"?"date":c.t==="time"?"time":"text"}" ${c.im?`inputmode="${c.im}"`:""} ${c.max?`maxlength="${c.max}"`:""} ${c.lista?`list="${c.lista}"`:""} ${c.ph?`placeholder="${esc(c.ph)}"`:""} enterkeyhint="next" value="${esc(val)}" autocomplete="off"></div>`; };
   $app.innerHTML=`<header class="ficha"><button id="w-sair">◂</button><b>FOF</b><span class="tag">${n}/${vis.length}</span><span class="zoom"><button id="w-ficha">👁 Ver FOF</button></span></header>
     <datalist id="fo-distritos">${FO_DISTRITOS.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist>
     <div class="w-passos">${vis.map(p=>{ const f=(p.campos||[]).some(c=>faltaK.has(c.k)); return `<button data-p="${PASSOS.indexOf(p)}" class="${p===P?"atual":""} ${p.id!=="fim"&&!f?"feito":""}" title="${esc(p.t)}">${p.id==="fim"?"✓":PASSOS.indexOf(p)+1}</button>`; }).join("")}</div>
     ${(()=>{ const f=fichas().find(x=>x.id===E.id); return f&&f.rejeitada&&!f.enviada?`<div class="aviso-box" style="margin:8px 12px 0;background:#fde8e8;border-color:#e7a1a1"><b>Rejeitada pelo NATA</b> (${esc(f.rejeitada.por||"")}): ${esc(f.rejeitada.motivo)}</div>`:""; })()}
-    <main class="m w">${P.id==="fim"?revisaoHTML(D,erros):`<h2>${esc(P.t)}</h2>${(P.id==="morada"||P.id==="local")&&D.gps&&D.modalidade!=="E-commerce"&&!E.geoNao?`<div id="w-geo"></div>`:""}<div id="w-info" class="nota"></div>${P.campos.map(campoHTML).join("")}<div id="w-erro" class="erro"></div>`}</main>
+    <main class="m w">${P.id==="fim"?revisaoHTML(D,erros):`<h2>${esc(P.t)}</h2>${(P.id==="morada"||P.id==="local")&&D.modalidade!=="E-commerce"&&!E.geoNao?`<div id="w-geo"></div>`:""}<div id="w-info" class="nota"></div>${P.campos.map(campoHTML).join("")}<div id="w-erro" class="erro"></div>`}</main>
     <div class="barra-baixo"><button id="w-ant" ${n<=1?"disabled":""}>◂ Anterior</button>${P.id==="fim"?`<button id="w-ver-ficha">📄 Completar na FOF</button><button class="prim" id="w-concluir" ${erros.length?"disabled":""}>Concluir</button>`:`<button class="prim" id="w-seg">Seguinte ▸</button>`}</div>`;
   const ler=()=>{ $app.querySelectorAll("main [data-k]").forEach(e=>{ const k=e.dataset.k;
       if(e.classList.contains("w-chips")){ const on=[...e.querySelectorAll(".w-chip.on")].map(b=>b.dataset.v); D[k]=e.dataset.t==="multi"?on:(on[0]||""); }
