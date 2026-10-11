@@ -615,7 +615,7 @@ const PASSOS=[
  {id:"activ",t:"Atividade",campos:[{k:"tipoActiv",l:"Tipo de atividade"}]},
  {id:"res",t:"Resultado",campos:[{k:"resultado",t:"multi",op:["SI","CR","CO"],rot:{SI:"S/I — sem infração",CR:"CR — crime",CO:"CO — contraordenação"},l:"Resultado da ação"}]},
  {id:"inf",t:"Infrações",se:D=>(D.resultado||[]).some(x=>x!=="SI"),campos:[{k:"infracoes",t:"area",l:"Infrações",linhas:5}]},
- {id:"fotos",t:"Fotografias (opcional)",campos:[{k:"fotos",t:"fotos",l:"Fotografias do local, documentos, rótulos… (até 6)"}]},
+ {id:"fotos",t:"Fotografias (opcional)",campos:[{k:"fotos",t:"fotos",l:"Fotografias do local, documentos, rótulos… (até 10)"}]},
  {id:"fim",t:"Revisão"}];
 const passoDe=k=>{ const i=PASSOS.findIndex(p=>(p.campos||[]).some(c=>c.k===k)); return i<0?0:i; };
 const passoAtivo=(p,D)=>!p.se||p.se(D);
@@ -626,7 +626,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
     if(c.t==="gps"){ if(D.modalidade==="E-commerce") return `<div class="w-campo"><label>${esc(c.l)}</label><p class="nota">Não se aplica (e-commerce).</p></div>`;
       return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-gps">${D.gps?`📍 ${D.gps.lat}, ${D.gps.lon} <span class="nota">(±${D.gps.prec} m)</span>`:`<span class="nota">Sem localização.</span>`} <button type="button" id="w-gps">📍 ${D.gps?"Atualizar":"Obter"}</button></div></div>`; }
     if(c.t==="fotos"){ const F=D.fotos||[]; return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-fotos">${F.map(x=>`<div class="w-foto" data-n="${x.n}"><img alt=""><button type="button" data-rmf="${x.n}">✕</button></div>`).join("")}</div>
-      ${F.length<6?`<label class="w-addfoto">📷 Tirar / escolher fotografia<input id="w-foto-in" type="file" accept="image/*" capture="environment" multiple hidden></label>`:""}</div>`; }
+      ${F.length<10?`<label class="w-addfoto">📷 Tirar / escolher fotografia<input id="w-foto-in" type="file" accept="image/*" capture="environment" multiple hidden></label>`:""}</div>`; }
     if(c.t==="brig"){ const b=Array.isArray(v)?v:[]; return `<div class="w-campo"><label>${esc(c.l)}</label><div class="w-brig">${[0,1,2,3,4].map(j=>`<input inputmode="numeric" data-b="${j}" value="${esc(b[j]||"")}" placeholder="${j===0?"o seu":""}">`).join("")}</div></div>`; }
     if(c.t==="area") return `<div class="w-campo"><label>${esc(c.l)}</label><textarea data-k="${c.k}" rows="${c.linhas||3}">${esc(v||"")}</textarea></div>`;
     const val=c.t==="date"?(v||""):v||""; return `<div class="w-campo"><label>${esc(c.l)}</label><input data-k="${c.k}" type="${c.t==="date"?"date":c.t==="time"?"time":"text"}" ${c.im?`inputmode="${c.im}"`:""} ${c.max?`maxlength="${c.max}"`:""} ${c.lista?`list="${c.lista}"`:""} ${c.ph?`placeholder="${esc(c.ph)}"`:""} enterkeyhint="next" value="${esc(val)}" autocomplete="off"></div>`; };
@@ -660,7 +660,7 @@ function ecraForm(){ const E=UI.fof, D=E.dados; let i=Math.min(Math.max(E.passo|
   const bg=document.getElementById("w-gps"); if(bg) bg.onclick=()=>{ bg.disabled=true; bg.textContent="A obter…"; ler(); obterGPS(D,()=>ecraForm()); };
   $app.querySelectorAll(".w-foto").forEach(async el=>{ try{ const b=await fotoLer(E.id+":"+el.dataset.n); if(b) el.querySelector("img").src=URL.createObjectURL(b); }catch(e){} });
   $app.querySelectorAll("[data-rmf]").forEach(b=>b.onclick=async()=>{ ler(); const n=+b.dataset.rmf; await fotoApagar(E.id+":"+n); D.fotos=(D.fotos||[]).filter(x=>x.n!==n); guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); });
-  const fin=document.getElementById("w-foto-in"); if(fin) fin.onchange=async()=>{ ler(); D.fotos=D.fotos||[]; for(const f of [...fin.files].slice(0,6-D.fotos.length)){ try{ const b=await reduzirFoto(f); const n=(D.fotos.reduce((m,x)=>Math.max(m,x.n),0))+1; await fotoGuardar(E.id+":"+n,b); D.fotos.push({n,nome:"foto-"+n+".jpg",tam:b.size}); }catch(e){ alert("Fotografia não guardada: "+e.message); } }
+  const fin=document.getElementById("w-foto-in"); if(fin) fin.onchange=async()=>{ ler(); D.fotos=D.fotos||[]; for(const f of [...fin.files].slice(0,10-D.fotos.length)){ try{ const b=await reduzirFoto(f); const n=(D.fotos.reduce((m,x)=>Math.max(m,x.n),0))+1; await fotoGuardar(E.id+":"+n,b); D.fotos.push({n,nome:"foto-"+n+".jpg",tam:b.size}); }catch(e){ alert("Fotografia não guardada: "+e.message); } }
     guardarFicha({id:E.id,dados:D,enviada:!!E.enviada}); ecraForm(); };
   const f1=ins.find(e=>!e.value)||ins[0]; if(f1 && !("ontouchstart" in window && P.id==="fim")) setTimeout(()=>f1.focus(),150);
   $app.querySelectorAll(".w-passos [data-p]").forEach(b=>b.onclick=()=>ir(+b.dataset.p));
