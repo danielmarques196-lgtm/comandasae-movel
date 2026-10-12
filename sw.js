@@ -1,5 +1,5 @@
 // funciona sem rede: guarda a app no telemóvel; atualiza quando houver rede
-const C="fof-movel-v5.11-20261012043232"; const F=["./","index.html","manifest.webmanifest","icone-192.png","icone-512.png"];
+const C="fof-movel-v5.15-20261012143659"; const F=["./","index.html","manifest.webmanifest","icone-192.png","icone-512.png"];
 self.addEventListener("install",e=>{ e.waitUntil(caches.open(C).then(c=>c.addAll(F))); self.skipWaiting(); });
 self.addEventListener("activate",e=>{ e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C&&/^fof-movel-/.test(x)).map(x=>caches.delete(x))))); self.clients.claim(); });
 self.addEventListener("notificationclick",e=>{ e.notification.close(); e.waitUntil(self.clients.matchAll({type:"window",includeUncontrolled:true}).then(l=>{ for(const c of l){ if("focus" in c) return c.focus(); } return self.clients.openWindow("./"); })); });
