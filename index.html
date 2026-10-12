@@ -92,6 +92,7 @@ h3.sec .ligacao{font-size:13px;font-weight:600;text-decoration:none;padding:0}
 .ver-como{margin-top:6px;max-width:100%;font-size:14px;padding:5px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:#fff}
 .ver-como option{color:#1c2418}
 .ver-faixa{background:#fff3cd;color:#5c4400;border:1px solid #f0d77a;border-radius:12px;padding:10px;margin:8px 0;font-size:14px}.ver-faixa button{display:block;margin-top:6px;padding:6px 12px;font-size:14px}
+.apagar-r{flex:0 0 auto;width:40px;height:40px;padding:0;border-radius:50%;font-size:17px;background:#fff;border:1px solid #e7a1a1}
 </style></head><body><div id="app"></div><div id="toast"></div>
 <script>!function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"function"==typeof define&&define.amd?define(["exports"],e):e((t=t||self).PDFLib={})}(this,(function(t){"use strict";
 /*! *****************************************************************************
@@ -565,7 +566,8 @@ function cartaoHoje(){ const d=meusDias()[0];
   return `<div class="ct-hoje"><div class="ct-l">Hoje · ${esc(d.ec?"E-commerce":(TPL[d.t]||d.t||"Serviço"))}</div><div class="ct-t">${esc(d.loc||"Local por indicar")}</div>
     <div class="ct-s">${col.length?"👥 Com "+esc(col.join(" + ")):"👤 Sozinho(a)"}${d.v?" · 🚗 "+esc(d.v):""}${d.ref?" · "+esc(d.ref):""}</div>${d.m?`<div class="ct-s">📝 ${esc(d.m)}</div>`:""}</div>`; }
 function estFOF(f){ return f.rejeitada&&!f.enviada?`<span class="tag mau">Rejeitada</span>`:f.validada?`<span class="tag ok">Validada ✓</span>`:f.recebida?`<span class="tag ok">Recebida na UO</span>`:f.enviada?`<span class="tag aviso">Enviada</span>`:f.dados.estado==="concluida"?`<span class="tag aviso">${temCaixa()?"Na fila":"Por enviar"}</span>`:`<span class="tag">Rascunho</span>`; }
-const itemFOF=f=>`<div class="item" data-id="${esc(f.id)}"><div><b>${esc(foOperador(f.dados)||"(sem operador)")}</b><br><small>${fmtData(f.dados.data)} ${esc(f.dados.hora||"")}${f.dados.nif?" · NIF "+esc(f.dados.nif):""}</small>${f.rejeitada&&!f.enviada?`<br><small class="erro">Motivo: ${esc(f.rejeitada.motivo)}</small>`:""}</div>${estFOF(f)}</div>`;
+const ehRascunho=f=>!f.enviada&&!f.rejeitada&&!f.recebida&&!f.validada&&f.dados.estado!=="concluida";   /* nunca saiu do telemóvel */
+const itemFOF=f=>`<div class="item" data-id="${esc(f.id)}"><div style="flex:1;min-width:0"><b>${esc(foOperador(f.dados)||"(sem operador)")}</b><br><small>${fmtData(f.dados.data)} ${esc(f.dados.hora||"")}${f.dados.nif?" · NIF "+esc(f.dados.nif):""}</small>${f.rejeitada&&!f.enviada?`<br><small class="erro">Motivo: ${esc(f.rejeitada.motivo)}</small>`:""}</div>${estFOF(f)}${ehRascunho(f)?`<button class="apagar-r" data-apagar="${esc(f.id)}" title="Eliminar rascunho" aria-label="Eliminar rascunho">🗑</button>`:""}</div>`;
 function ecraLista(){ const L=fichas(), tab=UI.tab==="fof"?"fof":"ini";
   const alertas=`${cfg.envioRecusado?`<div class="aviso-box" style="background:#fde8e8;border-color:#e7a1a1"><b>Envio recusado pelo servidor</b> (${esc(String(cfg.envioRecusado.estado))}). Contacte a Chefia (o token pode ter expirado). Entretanto, use <b>📧 Enviar FOF do dia por e-mail</b>.</div>`:""}
     ${L.some(f=>f.enviada&&!f.recebida&&f.enviadaEm&&Date.now()-Date.parse(f.enviadaEm)>24*3600000)?`<div class="aviso-box">Há FOF enviadas há mais de 24 h sem confirmação de receção na UO. <button id="l-reenv" style="margin-top:6px">Reenviar</button></div>`:""}
@@ -601,6 +603,9 @@ function ecraLista(){ const L=fichas(), tab=UI.tab==="fof"?"fof":"ini";
   q("l-nova").onclick=novaFicha;
   const lp=q("l-limpar"); if(lp) lp.onclick=()=>{ const nM=fichas().filter(f=>f.enviada&&f.manual&&!f.recebida&&!f.validada).length;
     if(!confirm("Retirar deste telemóvel as FOF que a UO já recebeu?"+(nM?"\n\nInclui "+nM+" FOF partilhada(s) à mão (OneDrive/e-mail), sem confirmação automática: retire-as só depois de confirmar que os ficheiros chegaram à UO.":"")+"\n\n(as enviadas pela caixa sem confirmação de receção ficam)")) return; const ok=f=>f.enviada&&(f.recebida||f.validada||f.manual); for(const f of fichas().filter(ok)) for(const x of (f.dados.fotos||[])) fotoApagar(f.id+":"+x.n); guardarLista(fichas().filter(f=>!ok(f))); inicio(); };
+  $app.querySelectorAll("[data-apagar]").forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); const f=fichas().find(x=>x.id===b.dataset.apagar); if(!f||!ehRascunho(f)) return;
+    if(!confirm("Eliminar o rascunho \""+(foOperador(f.dados)||"sem operador")+"\" de "+fmtData(f.dados.data)+"?\n\nO rascunho e as fotografias são apagados deste telemóvel e não podem ser recuperados.")) return;
+    for(const x of (f.dados.fotos||[])) fotoApagar(f.id+":"+x.n); guardarLista(fichas().filter(x=>x.id!==f.id)); toast("Rascunho eliminado."); ecraLista(); });
   $app.querySelectorAll(".item").forEach(e=>e.onclick=()=>{ const f=fichas().find(x=>x.id===e.dataset.id); const D=JSON.parse(JSON.stringify(f.dados));
     const falta=validarFOF(D).map(x=>x[0]); UI.fof={id:f.id,dados:D,enviada:f.enviada,modo:D.estado==="concluida"?"ficha":"form",passo:falta.length?passoDe(falta[0]):PASSOS.length-1}; inicio(); }); }
 
