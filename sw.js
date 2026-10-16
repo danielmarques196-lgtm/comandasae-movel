@@ -1,7 +1,7 @@
 // funciona sem rede: guarda a app no telemóvel; atualiza quando houver rede
-const C="fof-movel-v5.28-20261015222353"; const F=["./","index.html","manifest.webmanifest","icone-192.png","icone-512.png"];
+const C="comandasae-movel-v5.28-20261016050034"; const F=["./","index.html","manifest.webmanifest","icone-192.png","icone-512.png"];
 self.addEventListener("install",e=>{ e.waitUntil(caches.open(C).then(c=>c.addAll(F))); self.skipWaiting(); });
-self.addEventListener("activate",e=>{ e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C&&/^fof-movel-/.test(x)).map(x=>caches.delete(x))))); self.clients.claim(); });
+self.addEventListener("activate",e=>{ e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C&&/^(fof|comandasae)-movel-/.test(x)).map(x=>caches.delete(x))))); self.clients.claim(); });
 self.addEventListener("notificationclick",e=>{ e.notification.close(); e.waitUntil(self.clients.matchAll({type:"window",includeUncontrolled:true}).then(l=>{ for(const c of l){ if("focus" in c) return c.focus(); } return self.clients.openWindow("./"); })); });
 self.addEventListener("push",e=>{ let d={}; try{ d=e.data?e.data.json():{}; }catch(x){ d={titulo:"ComandASAE Móvel",texto:e.data?e.data.text():""}; } e.waitUntil(self.registration.showNotification(d.titulo||"ComandASAE Móvel",{body:d.texto||"",icon:"icone-192.png"})); });
 // só os ficheiros da própria app ficam guardados; pedidos ao GitHub, mapas e outros serviços nunca vão para a cache
